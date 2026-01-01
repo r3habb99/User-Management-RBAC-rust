@@ -5,8 +5,8 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use log::info;
 
 use crate::constants::{
-    ERR_NO_PERMISSION_AVATAR_DELETE, ERR_NO_PERMISSION_AVATAR_UPLOAD, ERR_USER_NOT_FOUND,
-    MSG_AVATAR_DELETED, MSG_AVATAR_UPLOADED,
+    CODE_USER_NOT_FOUND, ERR_NO_PERMISSION_AVATAR_DELETE, ERR_NO_PERMISSION_AVATAR_UPLOAD,
+    ERR_USER_NOT_FOUND, MSG_AVATAR_DELETED, MSG_AVATAR_UPLOADED,
 };
 use crate::errors::ApiError;
 use crate::middleware::{require_access, require_auth};
@@ -90,7 +90,10 @@ pub async fn delete_avatar(
     let user = avatar_service
         .get_user_by_id(&user_id)
         .await?
-        .ok_or_else(|| ApiError::NotFound(ERR_USER_NOT_FOUND.to_string()))?;
+        .ok_or_else(|| ApiError::NotFound {
+            code: CODE_USER_NOT_FOUND.to_string(),
+            message: ERR_USER_NOT_FOUND.to_string(),
+        })?;
 
     // Delete the avatar file if it exists
     if let Some(ref avatar_url) = user.profile.avatar_url {

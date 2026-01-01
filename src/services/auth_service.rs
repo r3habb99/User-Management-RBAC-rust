@@ -8,7 +8,10 @@ use mongodb::Database;
 use std::sync::Arc;
 
 use crate::config::CONFIG;
-use crate::constants::{ERR_ACCOUNT_DEACTIVATED, ERR_INVALID_CREDENTIALS};
+use crate::constants::{
+    CODE_ACCOUNT_DEACTIVATED, CODE_INVALID_CREDENTIALS, ERR_ACCOUNT_DEACTIVATED,
+    ERR_INVALID_CREDENTIALS,
+};
 use crate::errors::ApiError;
 use crate::models::{Claims, LoginRequest, User};
 use crate::repositories::UserRepository;
@@ -38,15 +41,24 @@ impl AuthService {
             .repository
             .find_by_email(&req.email)
             .await?
-            .ok_or_else(|| ApiError::Unauthorized(ERR_INVALID_CREDENTIALS.to_string()))?;
+            .ok_or_else(|| ApiError::Unauthorized {
+                code: CODE_INVALID_CREDENTIALS.to_string(),
+                message: ERR_INVALID_CREDENTIALS.to_string(),
+            })?;
 
         if !user.is_active {
-            return Err(ApiError::Unauthorized(ERR_ACCOUNT_DEACTIVATED.to_string()));
+            return Err(ApiError::Unauthorized {
+                code: CODE_ACCOUNT_DEACTIVATED.to_string(),
+                message: ERR_ACCOUNT_DEACTIVATED.to_string(),
+            });
         }
 
         // Verify password
         if !verify_password(&req.password, &user.password_hash)? {
-            return Err(ApiError::Unauthorized(ERR_INVALID_CREDENTIALS.to_string()));
+            return Err(ApiError::Unauthorized {
+                code: CODE_INVALID_CREDENTIALS.to_string(),
+                message: ERR_INVALID_CREDENTIALS.to_string(),
+            });
         }
 
         // Update last login

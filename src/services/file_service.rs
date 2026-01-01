@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use crate::config::CONFIG;
 use crate::constants::{
-    ERR_FAILED_PROCESS_UPLOAD, ERR_FAILED_READ_FILE, ERR_FAILED_SAVE_FILE, ERR_NO_AVATAR_FILE,
+    CODE_FILE_UPLOAD_FAILED, CODE_INTERNAL_ERROR, ERR_FAILED_PROCESS_UPLOAD, ERR_FAILED_READ_FILE,
+    ERR_FAILED_SAVE_FILE, ERR_NO_AVATAR_FILE,
 };
 use crate::errors::ApiError;
 use crate::validators::{
@@ -49,15 +50,17 @@ impl FileService {
         while let Some(item) = payload.next().await {
             let mut field = item.map_err(|e| {
                 warn!("Failed to process multipart field: {}", e);
-                ApiError::BadRequest(ERR_FAILED_PROCESS_UPLOAD.to_string())
+                ApiError::BadRequest {
+                    code: CODE_FILE_UPLOAD_FAILED.to_string(),
+                    message: ERR_FAILED_PROCESS_UPLOAD.to_string(),
+                }
             })?;
 
             // Get content disposition
-            let content_disposition = match field.content_disposition() {
-                Some(cd) => cd,
-                None => continue,
-            };
-            let field_name = content_disposition.get_name().unwrap_or("");
+            let content_disposition = field.content_disposition();
+            let field_name = content_disposition
+                .map(|cd| cd.get_name().unwrap_or(""))
+                .unwrap_or("");
 
             if field_name != "avatar" {
                 continue;
@@ -75,7 +78,10 @@ impl FileService {
             if !self.upload_dir.exists() {
                 std::fs::create_dir_all(&self.upload_dir).map_err(|e| {
                     warn!("Failed to create upload directory: {}", e);
-                    ApiError::InternalServerError(ERR_FAILED_SAVE_FILE.to_string())
+                    ApiError::InternalServerError {
+                        code: CODE_INTERNAL_ERROR.to_string(),
+                        message: ERR_FAILED_SAVE_FILE.to_string(),
+                    }
                 })?;
             }
 
@@ -84,7 +90,10 @@ impl FileService {
             // Create the file
             let mut file = std::fs::File::create(&filepath).map_err(|e| {
                 warn!("Failed to create file: {}", e);
-                ApiError::InternalServerError(ERR_FAILED_SAVE_FILE.to_string())
+                ApiError::InternalServerError {
+                    code: CODE_INTERNAL_ERROR.to_string(),
+                    message: ERR_FAILED_SAVE_FILE.to_string(),
+                }
             })?;
 
             // Write the file content with size limit
@@ -93,7 +102,10 @@ impl FileService {
             while let Some(chunk) = field.next().await {
                 let data = chunk.map_err(|e| {
                     warn!("Failed to read chunk: {}", e);
-                    ApiError::BadRequest(ERR_FAILED_READ_FILE.to_string())
+                    ApiError::BadRequest {
+                        code: CODE_FILE_UPLOAD_FAILED.to_string(),
+                        message: ERR_FAILED_READ_FILE.to_string(),
+                    }
                 })?;
 
                 total_size += data.len();
@@ -105,14 +117,20 @@ impl FileService {
 
                 file.write_all(&data).map_err(|e| {
                     warn!("Failed to write file: {}", e);
-                    ApiError::InternalServerError(ERR_FAILED_SAVE_FILE.to_string())
+                    ApiError::InternalServerError {
+                        code: CODE_INTERNAL_ERROR.to_string(),
+                        message: ERR_FAILED_SAVE_FILE.to_string(),
+                    }
                 })?;
             }
 
             return Ok(format!("/uploads/{}", filename));
         }
 
-        Err(ApiError::BadRequest(ERR_NO_AVATAR_FILE.to_string()))
+        Err(ApiError::BadRequest {
+            code: CODE_FILE_UPLOAD_FAILED.to_string(),
+            message: ERR_NO_AVATAR_FILE.to_string(),
+        })
     }
 
     /// Delete a file from the upload directory.

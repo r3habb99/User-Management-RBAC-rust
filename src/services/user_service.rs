@@ -8,9 +8,10 @@ use log::{debug, info, warn};
 
 use crate::config::CONFIG;
 use crate::constants::{
-    ERR_CANNOT_DEACTIVATE_YOURSELF, ERR_EMAIL_EXISTS, ERR_FAILED_FETCH_USER, ERR_INVALID_USER_ID,
-    ERR_USERNAME_EXISTS, ERR_USER_NOT_FOUND, ERR_WRONG_PASSWORD, MSG_USER_ACTIVATED_BULK,
-    MSG_USER_DEACTIVATED_BULK,
+    CODE_EMAIL_EXISTS, CODE_INTERNAL_ERROR, CODE_INVALID_USER_ID, CODE_USERNAME_EXISTS,
+    CODE_USER_NOT_FOUND, CODE_WRONG_PASSWORD, ERR_CANNOT_DEACTIVATE_YOURSELF, ERR_EMAIL_EXISTS,
+    ERR_FAILED_FETCH_USER, ERR_INVALID_USER_ID, ERR_USERNAME_EXISTS, ERR_USER_NOT_FOUND,
+    ERR_WRONG_PASSWORD, MSG_USER_ACTIVATED_BULK, MSG_USER_DEACTIVATED_BULK,
 };
 use crate::errors::ApiError;
 use crate::models::{
@@ -47,7 +48,10 @@ impl UserService {
     pub async fn register(&self, req: RegisterRequest) -> Result<User, ApiError> {
         // Check if user already exists
         if self.repository.find_by_email(&req.email).await?.is_some() {
-            return Err(ApiError::Conflict(ERR_EMAIL_EXISTS.to_string()));
+            return Err(ApiError::Conflict {
+                code: CODE_EMAIL_EXISTS.to_string(),
+                message: ERR_EMAIL_EXISTS.to_string(),
+            });
         }
 
         if self
@@ -56,7 +60,10 @@ impl UserService {
             .await?
             .is_some()
         {
-            return Err(ApiError::Conflict(ERR_USERNAME_EXISTS.to_string()));
+            return Err(ApiError::Conflict {
+                code: CODE_USERNAME_EXISTS.to_string(),
+                message: ERR_USERNAME_EXISTS.to_string(),
+            });
         }
 
         // Hash password
@@ -139,8 +146,10 @@ impl UserService {
 
     pub async fn get_user_by_id(&self, id: &str) -> Result<Option<User>, ApiError> {
         debug!("Fetching user by ID: {}", id);
-        let object_id = ObjectId::parse_str(id)
-            .map_err(|_| ApiError::BadRequest(ERR_INVALID_USER_ID.to_string()))?;
+        let object_id = ObjectId::parse_str(id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         self.repository.find_by_id(object_id).await
     }
@@ -153,8 +162,10 @@ impl UserService {
     ) -> Result<User, ApiError> {
         info!("Updating user profile for user_id: {}", user_id);
 
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest(ERR_INVALID_USER_ID.to_string()))?;
+        let object_id = ObjectId::parse_str(user_id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         // Fetch existing user
         let existing_user = self
@@ -163,7 +174,10 @@ impl UserService {
             .await?
             .ok_or_else(|| {
                 warn!("Update failed: User not found with id: {}", user_id);
-                ApiError::NotFound(ERR_USER_NOT_FOUND.to_string())
+                ApiError::NotFound {
+                    code: CODE_USER_NOT_FOUND.to_string(),
+                    message: ERR_USER_NOT_FOUND.to_string(),
+                }
             })?;
 
         // Build update document
@@ -181,7 +195,10 @@ impl UserService {
                             "Update failed: Email {} already taken by another user",
                             normalized_email
                         );
-                        return Err(ApiError::Conflict(ERR_EMAIL_EXISTS.to_string()));
+                        return Err(ApiError::Conflict {
+                            code: CODE_EMAIL_EXISTS.to_string(),
+                            message: ERR_EMAIL_EXISTS.to_string(),
+                        });
                     }
                 }
                 update_doc.insert("email", normalized_email);
@@ -199,7 +216,10 @@ impl UserService {
                             "Update failed: Username {} already taken by another user",
                             new_username
                         );
-                        return Err(ApiError::Conflict(ERR_USERNAME_EXISTS.to_string()));
+                        return Err(ApiError::Conflict {
+                            code: CODE_USERNAME_EXISTS.to_string(),
+                            message: ERR_USERNAME_EXISTS.to_string(),
+                        });
                     }
                 }
                 update_doc.insert("username", new_username.clone());
@@ -226,21 +246,29 @@ impl UserService {
         self.repository
             .find_by_id(object_id)
             .await?
-            .ok_or_else(|| ApiError::InternalServerError(ERR_FAILED_FETCH_USER.to_string()))
+            .ok_or_else(|| ApiError::InternalServerError {
+                code: CODE_INTERNAL_ERROR.to_string(),
+                message: ERR_FAILED_FETCH_USER.to_string(),
+            })
     }
 
     /// Delete user by ID
     pub async fn delete_user(&self, user_id: &str) -> Result<(), ApiError> {
         info!("Deleting user with id: {}", user_id);
 
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest(ERR_INVALID_USER_ID.to_string()))?;
+        let object_id = ObjectId::parse_str(user_id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         let result = self.repository.delete(object_id).await?;
 
         if result.deleted_count == 0 {
             warn!("Delete failed: User not found with id: {}", user_id);
-            return Err(ApiError::NotFound(ERR_USER_NOT_FOUND.to_string()));
+            return Err(ApiError::NotFound {
+                code: CODE_USER_NOT_FOUND.to_string(),
+                message: ERR_USER_NOT_FOUND.to_string(),
+            });
         }
 
         info!("Successfully deleted user: {}", user_id);
@@ -273,8 +301,10 @@ impl UserService {
             },
         )?;
 
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest(ERR_INVALID_USER_ID.to_string()))?;
+        let object_id = ObjectId::parse_str(user_id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         // Fetch user
         let user = self
@@ -286,7 +316,10 @@ impl UserService {
                     "Password change failed: User not found with id: {}",
                     user_id
                 );
-                ApiError::NotFound(ERR_USER_NOT_FOUND.to_string())
+                ApiError::NotFound {
+                    code: CODE_USER_NOT_FOUND.to_string(),
+                    message: ERR_USER_NOT_FOUND.to_string(),
+                }
             })?;
 
         // Verify current password
@@ -295,7 +328,10 @@ impl UserService {
                 "Password change failed: Invalid current password for user: {}",
                 user_id
             );
-            return Err(ApiError::Unauthorized(ERR_WRONG_PASSWORD.to_string()));
+            return Err(ApiError::Unauthorized {
+                code: CODE_WRONG_PASSWORD.to_string(),
+                message: ERR_WRONG_PASSWORD.to_string(),
+            });
         }
 
         // Hash new password
@@ -317,8 +353,10 @@ impl UserService {
             user_id, new_role
         );
 
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest(ERR_INVALID_USER_ID.to_string()))?;
+        let object_id = ObjectId::parse_str(user_id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         // Parse the role string to Role enum
         let role = Role::from_str(new_role);
@@ -330,7 +368,10 @@ impl UserService {
             .await?
             .ok_or_else(|| {
                 warn!("Role update failed: User not found with id: {}", user_id);
-                ApiError::NotFound(ERR_USER_NOT_FOUND.to_string())
+                ApiError::NotFound {
+                    code: CODE_USER_NOT_FOUND.to_string(),
+                    message: ERR_USER_NOT_FOUND.to_string(),
+                }
             })?;
 
         // Check if role is actually changing
@@ -356,7 +397,10 @@ impl UserService {
         self.repository
             .find_by_id(object_id)
             .await?
-            .ok_or_else(|| ApiError::InternalServerError(ERR_FAILED_FETCH_USER.to_string()))
+            .ok_or_else(|| ApiError::InternalServerError {
+                code: CODE_INTERNAL_ERROR.to_string(),
+                message: ERR_FAILED_FETCH_USER.to_string(),
+            })
     }
 
     /// Update user active status (admin only operation)
@@ -366,8 +410,10 @@ impl UserService {
             user_id, is_active
         );
 
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest(ERR_INVALID_USER_ID.to_string()))?;
+        let object_id = ObjectId::parse_str(user_id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         // Fetch existing user
         let existing_user = self
@@ -376,7 +422,10 @@ impl UserService {
             .await?
             .ok_or_else(|| {
                 warn!("Status update failed: User not found with id: {}", user_id);
-                ApiError::NotFound(ERR_USER_NOT_FOUND.to_string())
+                ApiError::NotFound {
+                    code: CODE_USER_NOT_FOUND.to_string(),
+                    message: ERR_USER_NOT_FOUND.to_string(),
+                }
             })?;
 
         // Check if status is actually changing
@@ -406,7 +455,10 @@ impl UserService {
         self.repository
             .find_by_id(object_id)
             .await?
-            .ok_or_else(|| ApiError::InternalServerError(ERR_FAILED_FETCH_USER.to_string()))
+            .ok_or_else(|| ApiError::InternalServerError {
+                code: CODE_INTERNAL_ERROR.to_string(),
+                message: ERR_FAILED_FETCH_USER.to_string(),
+            })
     }
 
     /// Get user statistics (admin only)
@@ -504,13 +556,18 @@ impl UserService {
 
     /// Internal helper for updating user status (no self-deactivation check)
     async fn update_status_internal(&self, user_id: &str, is_active: bool) -> Result<(), ApiError> {
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest(ERR_INVALID_USER_ID.to_string()))?;
+        let object_id = ObjectId::parse_str(user_id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         let result = self.repository.update_status(object_id, is_active).await?;
 
         if result.matched_count == 0 {
-            return Err(ApiError::NotFound(ERR_USER_NOT_FOUND.to_string()));
+            return Err(ApiError::NotFound {
+                code: CODE_USER_NOT_FOUND.to_string(),
+                message: ERR_USER_NOT_FOUND.to_string(),
+            });
         }
 
         Ok(())

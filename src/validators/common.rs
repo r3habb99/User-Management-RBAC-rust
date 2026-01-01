@@ -3,8 +3,9 @@
 use validator::ValidationErrors;
 
 use crate::constants::{
-    ERR_AT_LEAST_ONE_USER_ID, ERR_FILE_TOO_LARGE, ERR_INVALID_FILE_TYPE, ERR_PASSWORD_MISMATCH,
-    ERR_SAME_PASSWORD,
+    CODE_BULK_LIMIT_EXCEEDED, CODE_BULK_REQUIRED, CODE_FILE_TOO_LARGE, CODE_INVALID_FILE_TYPE,
+    CODE_PASSWORD_MISMATCH, CODE_SAME_PASSWORD, CODE_VALIDATION_ERROR, ERR_AT_LEAST_ONE_USER_ID,
+    ERR_FILE_TOO_LARGE, ERR_INVALID_FILE_TYPE, ERR_PASSWORD_MISMATCH, ERR_SAME_PASSWORD,
 };
 use crate::errors::ApiError;
 
@@ -35,7 +36,10 @@ pub fn validation_errors_to_api_error(e: ValidationErrors) -> ApiError {
                 .map(|e| e.message.clone().unwrap_or_default().to_string())
         })
         .collect();
-    ApiError::ValidationError(errors)
+    ApiError::ValidationError {
+        code: CODE_VALIDATION_ERROR.to_string(),
+        errors,
+    }
 }
 
 /// Validate that password confirmation matches the new password.
@@ -43,7 +47,10 @@ pub fn validation_errors_to_api_error(e: ValidationErrors) -> ApiError {
 /// Returns an error if the passwords don't match.
 pub fn validate_password_match(new_password: &str, confirm_password: &str) -> Result<(), ApiError> {
     if new_password != confirm_password {
-        return Err(ApiError::BadRequest(ERR_PASSWORD_MISMATCH.to_string()));
+        return Err(ApiError::BadRequest {
+            code: CODE_PASSWORD_MISMATCH.to_string(),
+            message: ERR_PASSWORD_MISMATCH.to_string(),
+        });
     }
     Ok(())
 }
@@ -56,7 +63,10 @@ pub fn validate_password_different(
     new_password: &str,
 ) -> Result<(), ApiError> {
     if current_password == new_password {
-        return Err(ApiError::BadRequest(ERR_SAME_PASSWORD.to_string()));
+        return Err(ApiError::BadRequest {
+            code: CODE_SAME_PASSWORD.to_string(),
+            message: ERR_SAME_PASSWORD.to_string(),
+        });
     }
     Ok(())
 }
@@ -67,7 +77,10 @@ pub fn validate_password_different(
 pub fn validate_avatar_content_type(content_type: Option<&str>) -> Result<(), ApiError> {
     match content_type {
         Some(ct) if ALLOWED_AVATAR_TYPES.iter().any(|t| ct.starts_with(t)) => Ok(()),
-        _ => Err(ApiError::BadRequest(ERR_INVALID_FILE_TYPE.to_string())),
+        _ => Err(ApiError::BadRequest {
+            code: CODE_INVALID_FILE_TYPE.to_string(),
+            message: ERR_INVALID_FILE_TYPE.to_string(),
+        }),
     }
 }
 
@@ -89,7 +102,10 @@ pub fn get_extension_from_content_type(content_type: Option<&str>) -> &'static s
 /// Returns an error if the file size exceeds the maximum allowed size.
 pub fn validate_avatar_size(size: usize) -> Result<(), ApiError> {
     if size > MAX_AVATAR_SIZE {
-        return Err(ApiError::BadRequest(ERR_FILE_TOO_LARGE.to_string()));
+        return Err(ApiError::BadRequest {
+            code: CODE_FILE_TOO_LARGE.to_string(),
+            message: ERR_FILE_TOO_LARGE.to_string(),
+        });
     }
     Ok(())
 }
@@ -99,14 +115,17 @@ pub fn validate_avatar_size(size: usize) -> Result<(), ApiError> {
 /// Returns an error if the list is empty or exceeds the maximum size.
 pub fn validate_bulk_user_ids(user_ids: &[String]) -> Result<(), ApiError> {
     if user_ids.is_empty() {
-        return Err(ApiError::BadRequest(ERR_AT_LEAST_ONE_USER_ID.to_string()));
+        return Err(ApiError::BadRequest {
+            code: CODE_BULK_REQUIRED.to_string(),
+            message: ERR_AT_LEAST_ONE_USER_ID.to_string(),
+        });
     }
 
     if user_ids.len() > MAX_BULK_SIZE {
-        return Err(ApiError::BadRequest(format!(
-            "Maximum {} users can be updated at once",
-            MAX_BULK_SIZE
-        )));
+        return Err(ApiError::BadRequest {
+            code: CODE_BULK_LIMIT_EXCEEDED.to_string(),
+            message: format!("Maximum {} users can be updated at once", MAX_BULK_SIZE),
+        });
     }
 
     Ok(())

@@ -5,9 +5,9 @@ use log::info;
 use validator::Validate;
 
 use crate::constants::{
-    ERR_CANNOT_DEACTIVATE_SELF, ERR_CANNOT_DEMOTE_SELF, ERR_ONLY_ADMINS_BULK,
-    ERR_ONLY_ADMINS_ROLES, ERR_ONLY_ADMINS_STATS, ERR_ONLY_ADMINS_STATUS, MSG_ROLE_UPDATED,
-    MSG_USER_ACTIVATED, MSG_USER_DEACTIVATED, MSG_USER_STATISTICS, ROLE_ADMIN,
+    CODE_SELF_ACTION_FORBIDDEN, ERR_CANNOT_DEACTIVATE_SELF, ERR_CANNOT_DEMOTE_SELF,
+    ERR_ONLY_ADMINS_BULK, ERR_ONLY_ADMINS_ROLES, ERR_ONLY_ADMINS_STATS, ERR_ONLY_ADMINS_STATUS,
+    MSG_ROLE_UPDATED, MSG_USER_ACTIVATED, MSG_USER_DEACTIVATED, MSG_USER_STATISTICS, ROLE_ADMIN,
 };
 use crate::errors::ApiError;
 use crate::middleware::{prevent_self_action, require_admin, require_auth};
@@ -51,7 +51,10 @@ pub async fn update_role(
 
     // Prevent admin from demoting themselves
     if claims.sub == user_id && body.role.to_lowercase() != ROLE_ADMIN {
-        return Err(ApiError::BadRequest(ERR_CANNOT_DEMOTE_SELF.to_string()));
+        return Err(ApiError::BadRequest {
+            code: CODE_SELF_ACTION_FORBIDDEN.to_string(),
+            message: ERR_CANNOT_DEMOTE_SELF.to_string(),
+        });
     }
 
     // Validate input

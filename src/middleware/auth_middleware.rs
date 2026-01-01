@@ -9,7 +9,7 @@ use jsonwebtoken::{decode, DecodingKey, Validation};
 use std::rc::Rc;
 
 use crate::config::CONFIG;
-use crate::constants::{ERR_INVALID_AUTH_HEADER, ERR_INVALID_TOKEN};
+use crate::constants::{CODE_INVALID_TOKEN, ERR_INVALID_AUTH_HEADER, ERR_INVALID_TOKEN};
 use crate::errors::ApiError;
 use crate::models::Claims;
 
@@ -67,7 +67,11 @@ where
             let token = match auth_header {
                 Some(header) if header.starts_with("Bearer ") => &header[7..],
                 _ => {
-                    return Err(ApiError::Unauthorized(ERR_INVALID_AUTH_HEADER.to_string()).into());
+                    return Err(ApiError::Unauthorized {
+                        code: CODE_INVALID_TOKEN.to_string(),
+                        message: ERR_INVALID_AUTH_HEADER.to_string(),
+                    }
+                    .into());
                 }
             };
 
@@ -77,7 +81,10 @@ where
                 &DecodingKey::from_secret(CONFIG.jwt_secret.as_bytes()),
                 &Validation::default(),
             )
-            .map_err(|_| ApiError::Unauthorized(ERR_INVALID_TOKEN.to_string()))?;
+            .map_err(|_| ApiError::Unauthorized {
+                code: CODE_INVALID_TOKEN.to_string(),
+                message: ERR_INVALID_TOKEN.to_string(),
+            })?;
 
             // Add claims to request extensions for use in handlers
             req.extensions_mut().insert(token_data.claims);
@@ -87,4 +94,3 @@ where
         })
     }
 }
-

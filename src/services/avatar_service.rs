@@ -5,6 +5,9 @@ use mongodb::bson::oid::ObjectId;
 use mongodb::Database;
 use std::sync::Arc;
 
+use crate::constants::{
+    CODE_INVALID_USER_ID, CODE_USER_NOT_FOUND, ERR_INVALID_USER_ID, ERR_USER_NOT_FOUND,
+};
 use crate::errors::ApiError;
 use crate::models::{User, UserProfile};
 use crate::repositories::UserRepository;
@@ -32,8 +35,10 @@ impl AvatarService {
     pub async fn update_avatar(&self, user_id: &str, avatar_url: &str) -> Result<User, ApiError> {
         info!("Updating avatar for user_id: {}", user_id);
 
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
+        let object_id = ObjectId::parse_str(user_id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         // Verify user exists
         let existing = self
@@ -42,7 +47,10 @@ impl AvatarService {
             .await?
             .ok_or_else(|| {
                 warn!("Avatar update failed: User not found with id: {}", user_id);
-                ApiError::NotFound("User not found".to_string())
+                ApiError::NotFound {
+                    code: CODE_USER_NOT_FOUND.to_string(),
+                    message: ERR_USER_NOT_FOUND.to_string(),
+                }
             })?;
 
         self.repository.update_avatar(object_id, avatar_url).await?;
@@ -64,8 +72,10 @@ impl AvatarService {
     pub async fn delete_avatar(&self, user_id: &str) -> Result<User, ApiError> {
         info!("Deleting avatar for user_id: {}", user_id);
 
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
+        let object_id = ObjectId::parse_str(user_id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         // Verify user exists
         let existing = self
@@ -74,7 +84,10 @@ impl AvatarService {
             .await?
             .ok_or_else(|| {
                 warn!("Avatar delete failed: User not found with id: {}", user_id);
-                ApiError::NotFound("User not found".to_string())
+                ApiError::NotFound {
+                    code: CODE_USER_NOT_FOUND.to_string(),
+                    message: ERR_USER_NOT_FOUND.to_string(),
+                }
             })?;
 
         self.repository.delete_avatar(object_id).await?;
@@ -94,8 +107,10 @@ impl AvatarService {
 
     /// Get user by ID (for avatar operations that need user data).
     pub async fn get_user_by_id(&self, id: &str) -> Result<Option<User>, ApiError> {
-        let object_id = ObjectId::parse_str(id)
-            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
+        let object_id = ObjectId::parse_str(id).map_err(|_| ApiError::BadRequest {
+            code: CODE_INVALID_USER_ID.to_string(),
+            message: ERR_INVALID_USER_ID.to_string(),
+        })?;
 
         self.repository.find_by_id(object_id).await
     }

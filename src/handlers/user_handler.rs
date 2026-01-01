@@ -5,10 +5,10 @@ use log::{debug, info, warn};
 use validator::Validate;
 
 use crate::constants::{
-    DEFAULT_PAGE_NUMBER, DEFAULT_PAGE_SIZE, ERR_CHANGE_OWN_PASSWORD_ONLY,
-    ERR_NO_PERMISSION_DELETE_ACCOUNT, ERR_NO_PERMISSION_UPDATE_PROFILE, ERR_USER_NOT_FOUND,
-    MAX_PAGE_SIZE, MSG_PASSWORD_CHANGED, MSG_USER_DELETED, MSG_USER_FOUND,
-    MSG_USER_PROFILE_RETRIEVED, MSG_USER_UPDATED,
+    CODE_FORBIDDEN, CODE_USER_NOT_FOUND, DEFAULT_PAGE_NUMBER, DEFAULT_PAGE_SIZE,
+    ERR_CHANGE_OWN_PASSWORD_ONLY, ERR_NO_PERMISSION_DELETE_ACCOUNT,
+    ERR_NO_PERMISSION_UPDATE_PROFILE, ERR_USER_NOT_FOUND, MAX_PAGE_SIZE, MSG_PASSWORD_CHANGED,
+    MSG_USER_DELETED, MSG_USER_FOUND, MSG_USER_PROFILE_RETRIEVED, MSG_USER_UPDATED,
 };
 use crate::errors::ApiError;
 use crate::middleware::{require_access, require_auth};
@@ -98,7 +98,10 @@ pub async fn get_user(
         .await?
         .ok_or_else(|| {
             warn!("User not found with id: {}", user_id);
-            ApiError::NotFound(ERR_USER_NOT_FOUND.to_string())
+            ApiError::NotFound {
+                code: CODE_USER_NOT_FOUND.to_string(),
+                message: ERR_USER_NOT_FOUND.to_string(),
+            }
         })?;
 
     let user_response: UserResponse = user.into();
@@ -133,7 +136,10 @@ pub async fn get_current_user(
         .await?
         .ok_or_else(|| {
             warn!("Current user not found with id: {}", claims.sub);
-            ApiError::NotFound(ERR_USER_NOT_FOUND.to_string())
+            ApiError::NotFound {
+                code: CODE_USER_NOT_FOUND.to_string(),
+                message: ERR_USER_NOT_FOUND.to_string(),
+            }
         })?;
 
     let user_response: UserResponse = user.into();
@@ -269,9 +275,10 @@ pub async fn change_password(
             "User {} (role: {}) attempted to change password of user {}",
             claims.sub, claims.role, user_id
         );
-        return Err(ApiError::Unauthorized(
-            ERR_CHANGE_OWN_PASSWORD_ONLY.to_string(),
-        ));
+        return Err(ApiError::Unauthorized {
+            code: CODE_FORBIDDEN.to_string(),
+            message: ERR_CHANGE_OWN_PASSWORD_ONLY.to_string(),
+        });
     }
 
     // Validate input

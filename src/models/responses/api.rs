@@ -36,6 +36,9 @@ pub struct ErrorResponse {
     /// Whether the request was successful (always false for errors)
     #[schema(example = false)]
     pub success: bool,
+    /// Machine-readable error code
+    #[schema(example = "VALIDATION_ERROR")]
+    pub code: String,
     /// Error message
     #[schema(example = "An error occurred")]
     pub message: String,
@@ -54,4 +57,3 @@ pub struct HealthResponse {
     #[schema(example = "Server is running")]
     pub message: String,
 }
-

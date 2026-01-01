@@ -9,7 +9,10 @@
 use actix_web::HttpRequest;
 use log::warn;
 
-use crate::constants::ERR_AUTH_REQUIRED;
+use crate::constants::{
+    CODE_ADMIN_REQUIRED, CODE_AUTH_REQUIRED, CODE_FORBIDDEN, CODE_SELF_ACTION_FORBIDDEN,
+    ERR_AUTH_REQUIRED,
+};
 use crate::errors::ApiError;
 use crate::models::Claims;
 
@@ -26,7 +29,10 @@ use super::RequestExt;
 pub fn require_auth(req: &HttpRequest) -> Result<Claims, ApiError> {
     req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request");
-        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
+        ApiError::Unauthorized {
+            code: CODE_AUTH_REQUIRED.to_string(),
+            message: ERR_AUTH_REQUIRED.to_string(),
+        }
     })
 }
 
@@ -46,7 +52,10 @@ pub fn require_auth(req: &HttpRequest) -> Result<Claims, ApiError> {
 pub fn require_admin(claims: &Claims, action_msg: &str) -> Result<(), ApiError> {
     if !claims.is_admin() {
         warn!("Non-admin user {} attempted admin action", claims.sub);
-        return Err(ApiError::Unauthorized(action_msg.to_string()));
+        return Err(ApiError::Unauthorized {
+            code: CODE_ADMIN_REQUIRED.to_string(),
+            message: action_msg.to_string(),
+        });
     }
     Ok(())
 }
@@ -75,7 +84,10 @@ pub fn require_access(
             "User {} (role: {}) attempted to access resource of user {}",
             claims.sub, claims.role, target_user_id
         );
-        return Err(ApiError::Unauthorized(permission_msg.to_string()));
+        return Err(ApiError::Unauthorized {
+            code: CODE_FORBIDDEN.to_string(),
+            message: permission_msg.to_string(),
+        });
     }
     Ok(())
 }
@@ -104,8 +116,10 @@ pub fn prevent_self_action(
             "User {} attempted self-targeted action: {}",
             claims.sub, self_action_msg
         );
-        return Err(ApiError::BadRequest(self_action_msg.to_string()));
+        return Err(ApiError::BadRequest {
+            code: CODE_SELF_ACTION_FORBIDDEN.to_string(),
+            message: self_action_msg.to_string(),
+        });
     }
     Ok(())
 }
-
