@@ -20,6 +20,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::config::CONFIG;
 use crate::openapi::ApiDoc;
+use crate::repositories::UserRepository;
 use crate::services::{AuthService, AvatarService, FileService, UserService};
 
 #[actix_web::main]
@@ -48,6 +49,12 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to ping MongoDB");
     info!("Connected to MongoDB successfully!");
+
+    // Create database indexes
+    let user_repository = UserRepository::new(&db);
+    if let Err(e) = user_repository.create_indexes().await {
+        log::error!("Failed to create database indexes: {}", e);
+    }
 
     // Initialize services
     let user_service = UserService::new(&db);

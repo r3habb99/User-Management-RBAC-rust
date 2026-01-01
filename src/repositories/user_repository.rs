@@ -4,10 +4,11 @@
 //! providing a clean interface for the service layer.
 
 use futures::TryStreamExt;
-use log::debug;
+use log::{debug, info};
 use mongodb::bson::{doc, oid::ObjectId, Document};
-use mongodb::{Collection, Database};
+use mongodb::{Collection, Database, IndexModel};
 
+use crate::constants::COLLECTION_USERS;
 use crate::errors::ApiError;
 use crate::models::User;
 
@@ -20,8 +21,48 @@ impl UserRepository {
     /// Create a new UserRepository instance.
     pub fn new(db: &Database) -> Self {
         Self {
-            collection: db.collection("users"),
+            collection: db.collection(COLLECTION_USERS),
         }
+    }
+
+    /// Create database indexes for commonly queried fields.
+    ///
+    /// This method should be called once during application startup to ensure
+    /// optimal query performance. It creates the following indexes:
+    /// - Unique index on `email`
+    /// - Unique index on `username`
+    /// - Compound index on `role` and `is_active`
+    pub async fn create_indexes(&self) -> Result<(), ApiError> {
+        info!("Creating database indexes for users collection...");
+
+        let indexes = vec![
+            // Unique index on email
+            IndexModel::builder()
+                .keys(doc! { "email": 1 })
+                .options(
+                    mongodb::options::IndexOptions::builder()
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+            // Unique index on username
+            IndexModel::builder()
+                .keys(doc! { "username": 1 })
+                .options(
+                    mongodb::options::IndexOptions::builder()
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+            // Compound index on role and is_active for filtering queries
+            IndexModel::builder()
+                .keys(doc! { "role": 1, "is_active": 1 })
+                .build(),
+        ];
+
+        self.collection.create_indexes(indexes).await?;
+        info!("Database indexes created successfully");
+        Ok(())
     }
 
     /// Insert a new user into the database.
