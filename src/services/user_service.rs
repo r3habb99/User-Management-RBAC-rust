@@ -1,7 +1,6 @@
-use bcrypt::{hash, verify, DEFAULT_COST};
-use chrono::Utc;
+//! User service for user CRUD operations, password management, and admin operations.
+
 use futures::TryStreamExt;
-use jsonwebtoken::{encode, EncodingKey, Header};
 use mongodb::bson::{doc, oid::ObjectId};
 use mongodb::{Collection, Database};
 
@@ -10,9 +9,10 @@ use log::{debug, info, warn};
 use crate::config::CONFIG;
 use crate::errors::ApiError;
 use crate::models::{
-    BulkUpdateResponse, BulkUpdateResult, ChangePasswordRequest, Claims, LoginRequest,
-    RegisterRequest, Role, UpdateUserRequest, User, UserProfile, UserResponse, UserStats,
+    BulkUpdateResponse, BulkUpdateResult, ChangePasswordRequest, RegisterRequest, Role,
+    UpdateUserRequest, User, UserProfile, UserResponse, UserStats,
 };
+use crate::services::auth_service::{hash_password, verify_password};
 
 pub struct UserService {
     collection: Collection<User>,
@@ -36,7 +36,7 @@ impl UserService {
         }
 
         // Hash password
-        let password_hash = hash(&req.password, DEFAULT_COST)?;
+        let password_hash = hash_password(&req.password)?;
 
         let now = mongodb::bson::DateTime::now();
         let user = User {
@@ -59,38 +59,6 @@ impl UserService {
             id: Some(id),
             ..user
         })
-    }
-
-    pub async fn login(&self, req: LoginRequest) -> Result<(User, String), ApiError> {
-        let user = self
-            .find_by_email(&req.email)
-            .await?
-            .ok_or_else(|| ApiError::Unauthorized("Invalid email or password".to_string()))?;
-
-        if !user.is_active {
-            return Err(ApiError::Unauthorized("Account is deactivated".to_string()));
-        }
-
-        // Verify password
-        if !verify(&req.password, &user.password_hash)? {
-            return Err(ApiError::Unauthorized(
-                "Invalid email or password".to_string(),
-            ));
-        }
-
-        // Update last login
-        let user_id = user.id.unwrap();
-        self.collection
-            .update_one(
-                doc! { "_id": user_id },
-                doc! { "$set": { "last_login": mongodb::bson::DateTime::now() } },
-            )
-            .await?;
-
-        // Generate JWT token
-        let token = self.generate_token(&user)?;
-
-        Ok((user, token))
     }
 
     pub async fn get_all_users(
@@ -280,88 +248,6 @@ impl UserService {
             })
     }
 
-    /// Update user avatar URL
-    pub async fn update_avatar(&self, user_id: &str, avatar_url: &str) -> Result<User, ApiError> {
-        info!("Updating avatar for user_id: {}", user_id);
-
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
-
-        // Verify user exists
-        let existing = self
-            .collection
-            .find_one(doc! { "_id": object_id })
-            .await?
-            .ok_or_else(|| {
-                warn!("Avatar update failed: User not found with id: {}", user_id);
-                ApiError::NotFound("User not found".to_string())
-            })?;
-
-        self.collection
-            .update_one(
-                doc! { "_id": object_id },
-                doc! {
-                    "$set": {
-                        "profile.avatar_url": avatar_url,
-                        "updated_at": mongodb::bson::DateTime::now()
-                    }
-                },
-            )
-            .await?;
-
-        info!("Successfully updated avatar for user: {}", user_id);
-
-        // Return updated user
-        Ok(User {
-            profile: UserProfile {
-                avatar_url: Some(avatar_url.to_string()),
-                ..existing.profile
-            },
-            updated_at: mongodb::bson::DateTime::now(),
-            ..existing
-        })
-    }
-
-    /// Delete user avatar
-    pub async fn delete_avatar(&self, user_id: &str) -> Result<User, ApiError> {
-        info!("Deleting avatar for user_id: {}", user_id);
-
-        let object_id = ObjectId::parse_str(user_id)
-            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
-
-        // Verify user exists
-        let existing = self
-            .collection
-            .find_one(doc! { "_id": object_id })
-            .await?
-            .ok_or_else(|| {
-                warn!("Avatar delete failed: User not found with id: {}", user_id);
-                ApiError::NotFound("User not found".to_string())
-            })?;
-
-        self.collection
-            .update_one(
-                doc! { "_id": object_id },
-                doc! {
-                    "$unset": { "profile.avatar_url": "" },
-                    "$set": { "updated_at": mongodb::bson::DateTime::now() }
-                },
-            )
-            .await?;
-
-        info!("Successfully deleted avatar for user: {}", user_id);
-
-        // Return updated user
-        Ok(User {
-            profile: UserProfile {
-                avatar_url: None,
-                ..existing.profile
-            },
-            updated_at: mongodb::bson::DateTime::now(),
-            ..existing
-        })
-    }
-
     /// Delete user by ID
     pub async fn delete_user(&self, user_id: &str) -> Result<(), ApiError> {
         info!("Deleting user with id: {}", user_id);
@@ -430,7 +316,7 @@ impl UserService {
             })?;
 
         // Verify current password
-        if !verify(&req.current_password, &user.password_hash)? {
+        if !verify_password(&req.current_password, &user.password_hash)? {
             warn!(
                 "Password change failed: Invalid current password for user: {}",
                 user_id
@@ -441,7 +327,7 @@ impl UserService {
         }
 
         // Hash new password
-        let new_password_hash = hash(&req.new_password, DEFAULT_COST)?;
+        let new_password_hash = hash_password(&req.new_password)?;
 
         // Update password
         self.collection
@@ -729,32 +615,6 @@ impl UserService {
             .await?)
     }
 
-    fn generate_token(&self, user: &User) -> Result<String, ApiError> {
-        let now = Utc::now().timestamp() as usize;
-        let exp = now + (CONFIG.jwt_expiration_hours as usize * 3600);
-
-        let claims = Claims {
-            sub: user.id.unwrap().to_hex(),
-            email: user.email.clone(),
-            role: user.role.to_string(),
-            exp,
-            iat: now,
-        };
-
-        debug!(
-            "Generated token for user {} with role {}",
-            user.email, user.role
-        );
-
-        let token = encode(
-            &Header::default(),
-            &claims,
-            &EncodingKey::from_secret(CONFIG.jwt_secret.as_bytes()),
-        )?;
-
-        Ok(token)
-    }
-
     /// Seed the database with an initial admin user if no admin exists
     /// This is called on application startup when SEED_ADMIN is true
     pub async fn seed_admin(&self) -> Result<(), ApiError> {
@@ -797,7 +657,7 @@ impl UserService {
         }
 
         // Create the admin user
-        let password_hash = hash(&CONFIG.admin_password, DEFAULT_COST)?;
+        let password_hash = hash_password(&CONFIG.admin_password)?;
         let now = mongodb::bson::DateTime::now();
 
         let admin_user = User {

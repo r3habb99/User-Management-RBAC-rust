@@ -17,7 +17,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::config::CONFIG;
 use crate::openapi::ApiDoc;
-use crate::services::UserService;
+use crate::services::{AuthService, AvatarService, UserService};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -48,6 +48,8 @@ async fn main() -> std::io::Result<()> {
 
     // Initialize services
     let user_service = UserService::new(&db);
+    let auth_service = AuthService::new(&db);
+    let avatar_service = AvatarService::new(&db);
 
     // Seed admin user if needed
     if let Err(e) = user_service.seed_admin().await {
@@ -55,6 +57,8 @@ async fn main() -> std::io::Result<()> {
     }
 
     let user_service = web::Data::new(user_service);
+    let auth_service = web::Data::new(auth_service);
+    let avatar_service = web::Data::new(avatar_service);
 
     // Clone upload_dir for use in HttpServer closure
     let upload_dir_clone = upload_dir.clone();
@@ -92,6 +96,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .wrap(Logger::default())
             .app_data(user_service.clone())
+            .app_data(auth_service.clone())
+            .app_data(avatar_service.clone())
             .configure(routes::configure_routes)
             // Swagger UI
             .service(
