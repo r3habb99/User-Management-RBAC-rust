@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::constants::ROLE_ADMIN;
+
 /// JWT Claims structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
@@ -15,7 +17,7 @@ pub struct Claims {
 impl Claims {
     /// Check if the claims belong to an admin user
     pub fn is_admin(&self) -> bool {
-        self.role == "admin"
+        self.role == ROLE_ADMIN
     }
 
     /// Check if the claims belong to the specified user ID
@@ -28,4 +30,3 @@ impl Claims {
         self.is_admin() || self.is_user(user_id)
     }
 }
-

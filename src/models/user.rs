@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use utoipa::ToSchema;
 
+use crate::constants::{ROLE_ADMIN, ROLE_USER};
+
 /// User roles for role-based access control
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -22,23 +24,19 @@ impl Default for Role {
 impl fmt::Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Role::Admin => write!(f, "admin"),
-            Role::User => write!(f, "user"),
+            Role::Admin => write!(f, "{}", ROLE_ADMIN),
+            Role::User => write!(f, "{}", ROLE_USER),
         }
     }
 }
 
 impl Role {
-    /// Check if this role has admin privileges
-    pub fn is_admin(&self) -> bool {
-        matches!(self, Role::Admin)
-    }
-
     /// Parse role from string
     pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "admin" => Role::Admin,
-            _ => Role::User,
+        if s.to_lowercase() == ROLE_ADMIN {
+            Role::Admin
+        } else {
+            Role::User
         }
     }
 }
