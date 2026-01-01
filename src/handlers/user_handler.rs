@@ -5,9 +5,10 @@ use log::{debug, info, warn};
 use validator::Validate;
 
 use crate::constants::{
-    ERR_CHANGE_OWN_PASSWORD_ONLY, ERR_NO_PERMISSION_DELETE_ACCOUNT,
-    ERR_NO_PERMISSION_UPDATE_PROFILE, ERR_USER_NOT_FOUND, MSG_PASSWORD_CHANGED, MSG_USER_DELETED,
-    MSG_USER_FOUND, MSG_USER_PROFILE_RETRIEVED, MSG_USER_UPDATED,
+    DEFAULT_PAGE_NUMBER, DEFAULT_PAGE_SIZE, ERR_CHANGE_OWN_PASSWORD_ONLY,
+    ERR_NO_PERMISSION_DELETE_ACCOUNT, ERR_NO_PERMISSION_UPDATE_PROFILE, ERR_USER_NOT_FOUND,
+    MAX_PAGE_SIZE, MSG_PASSWORD_CHANGED, MSG_USER_DELETED, MSG_USER_FOUND,
+    MSG_USER_PROFILE_RETRIEVED, MSG_USER_UPDATED,
 };
 use crate::errors::ApiError;
 use crate::middleware::{require_access, require_auth};
@@ -41,8 +42,11 @@ pub async fn get_users(
     user_service: web::Data<UserService>,
     query: web::Query<UserListQuery>,
 ) -> Result<HttpResponse, ApiError> {
-    let page = query.page.unwrap_or(1).max(1);
-    let per_page = query.per_page.unwrap_or(10).min(100);
+    let page = query.page.unwrap_or(DEFAULT_PAGE_NUMBER).max(1);
+    let per_page = query
+        .per_page
+        .unwrap_or(DEFAULT_PAGE_SIZE)
+        .min(MAX_PAGE_SIZE);
 
     let (users, total) = user_service
         .get_all_users(

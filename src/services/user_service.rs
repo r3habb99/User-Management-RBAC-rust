@@ -1,6 +1,6 @@
 //! User service for user CRUD operations, password management, and admin operations.
 
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::{doc, oid::ObjectId, Document};
 use mongodb::Database;
 use std::sync::Arc;
 
@@ -208,40 +208,7 @@ impl UserService {
         }
 
         // Update profile fields
-        if let Some(ref first_name) = req.first_name {
-            update_doc.insert("profile.first_name", first_name.clone());
-            has_updates = true;
-        }
-
-        if let Some(ref last_name) = req.last_name {
-            update_doc.insert("profile.last_name", last_name.clone());
-            has_updates = true;
-        }
-
-        if let Some(ref phone) = req.phone {
-            update_doc.insert("profile.phone", phone.clone());
-            has_updates = true;
-        }
-
-        if let Some(ref bio) = req.bio {
-            update_doc.insert("profile.bio", bio.clone());
-            has_updates = true;
-        }
-
-        if let Some(ref location) = req.location {
-            update_doc.insert("profile.location", location.clone());
-            has_updates = true;
-        }
-
-        if let Some(ref website) = req.website {
-            update_doc.insert("profile.website", website.clone());
-            has_updates = true;
-        }
-
-        if let Some(ref date_of_birth) = req.date_of_birth {
-            update_doc.insert("profile.date_of_birth", date_of_birth.clone());
-            has_updates = true;
-        }
+        has_updates |= Self::build_profile_update_fields(&req, &mut update_doc);
 
         if !has_updates {
             debug!("No changes detected for user: {}", user_id);
@@ -622,5 +589,49 @@ impl UserService {
         info!("⚠️  Please change the default admin password after first login!");
 
         Ok(())
+    }
+
+    /// Build update document from profile fields in UpdateUserRequest.
+    ///
+    /// Returns `true` if any profile fields were added to the document.
+    fn build_profile_update_fields(req: &UpdateUserRequest, update_doc: &mut Document) -> bool {
+        let mut has_updates = false;
+
+        if let Some(ref first_name) = req.first_name {
+            update_doc.insert("profile.first_name", first_name.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref last_name) = req.last_name {
+            update_doc.insert("profile.last_name", last_name.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref phone) = req.phone {
+            update_doc.insert("profile.phone", phone.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref bio) = req.bio {
+            update_doc.insert("profile.bio", bio.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref location) = req.location {
+            update_doc.insert("profile.location", location.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref website) = req.website {
+            update_doc.insert("profile.website", website.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref date_of_birth) = req.date_of_birth {
+            update_doc.insert("profile.date_of_birth", date_of_birth.clone());
+            has_updates = true;
+        }
+
+        has_updates
     }
 }
