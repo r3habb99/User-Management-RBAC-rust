@@ -1,8 +1,8 @@
 //! User service for user CRUD operations, password management, and admin operations.
 
-use futures::TryStreamExt;
 use mongodb::bson::{doc, oid::ObjectId};
-use mongodb::{Collection, Database};
+use mongodb::Database;
+use std::sync::Arc;
 
 use log::{debug, info, warn};
 
@@ -12,27 +12,45 @@ use crate::models::{
     BulkUpdateResponse, BulkUpdateResult, ChangePasswordRequest, RegisterRequest, Role,
     UpdateUserRequest, User, UserProfile, UserResponse, UserStats,
 };
+use crate::repositories::UserRepository;
 use crate::services::auth_service::{hash_password, verify_password};
 use crate::validators::{validate_password_different, validate_password_match};
 
 pub struct UserService {
-    collection: Collection<User>,
+    repository: Arc<UserRepository>,
 }
 
 impl UserService {
     pub fn new(db: &Database) -> Self {
         Self {
-            collection: db.collection("users"),
+            repository: Arc::new(UserRepository::new(db)),
         }
+    }
+
+    /// Create a new UserService with a shared repository (for dependency injection).
+    #[allow(dead_code)]
+    pub fn with_repository(repository: Arc<UserRepository>) -> Self {
+        Self { repository }
+    }
+
+    /// Get the underlying repository (for sharing with other services).
+    #[allow(dead_code)]
+    pub fn repository(&self) -> Arc<UserRepository> {
+        Arc::clone(&self.repository)
     }
 
     pub async fn register(&self, req: RegisterRequest) -> Result<User, ApiError> {
         // Check if user already exists
-        if self.find_by_email(&req.email).await?.is_some() {
+        if self.repository.find_by_email(&req.email).await?.is_some() {
             return Err(ApiError::Conflict("Email already registered".to_string()));
         }
 
-        if self.find_by_username(&req.username).await?.is_some() {
+        if self
+            .repository
+            .find_by_username(&req.username)
+            .await?
+            .is_some()
+        {
             return Err(ApiError::Conflict("Username already taken".to_string()));
         }
 
@@ -53,8 +71,7 @@ impl UserService {
             last_login: None,
         };
 
-        let result = self.collection.insert_one(&user).await?;
-        let id = result.inserted_id.as_object_id().unwrap();
+        let id = self.repository.insert(&user).await?;
 
         Ok(User {
             id: Some(id),
@@ -103,18 +120,13 @@ impl UserService {
 
         debug!("Fetching users with filter: {:?}", filter);
 
-        let total = self.collection.count_documents(filter.clone()).await?;
+        let total = self.repository.count(filter.clone()).await?;
         let skip = (page - 1) * per_page;
 
-        let cursor = self
-            .collection
-            .find(filter)
-            .skip(skip)
-            .limit(per_page as i64)
-            .sort(doc! { "created_at": -1 })
+        let users = self
+            .repository
+            .find_with_filter(filter, skip, per_page as i64)
             .await?;
-
-        let users: Vec<User> = cursor.try_collect().await?;
         let user_responses: Vec<UserResponse> = users.into_iter().map(|u| u.into()).collect();
 
         Ok((user_responses, total))
@@ -125,7 +137,7 @@ impl UserService {
         let object_id = ObjectId::parse_str(id)
             .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
 
-        Ok(self.collection.find_one(doc! { "_id": object_id }).await?)
+        self.repository.find_by_id(object_id).await
     }
 
     /// Update user profile (email and/or username)
@@ -141,8 +153,8 @@ impl UserService {
 
         // Fetch existing user
         let existing_user = self
-            .collection
-            .find_one(doc! { "_id": object_id })
+            .repository
+            .find_by_id(object_id)
             .await?
             .ok_or_else(|| {
                 warn!("Update failed: User not found with id: {}", user_id);
@@ -158,7 +170,7 @@ impl UserService {
             let normalized_email = new_email.to_lowercase();
             if normalized_email != existing_user.email {
                 // Check if email is already taken by another user
-                if let Some(other_user) = self.find_by_email(&normalized_email).await? {
+                if let Some(other_user) = self.repository.find_by_email(&normalized_email).await? {
                     if other_user.id != existing_user.id {
                         warn!(
                             "Update failed: Email {} already taken by another user",
@@ -176,7 +188,7 @@ impl UserService {
         if let Some(ref new_username) = req.username {
             if *new_username != existing_user.username {
                 // Check if username is already taken by another user
-                if let Some(other_user) = self.find_by_username(new_username).await? {
+                if let Some(other_user) = self.repository.find_by_username(new_username).await? {
                     if other_user.id != existing_user.id {
                         warn!(
                             "Update failed: Username {} already taken by another user",
@@ -234,19 +246,14 @@ impl UserService {
         // Add updated_at timestamp
         update_doc.insert("updated_at", mongodb::bson::DateTime::now());
 
-        self.collection
-            .update_one(doc! { "_id": object_id }, doc! { "$set": update_doc })
-            .await?;
+        self.repository.update(object_id, update_doc).await?;
 
         info!("Successfully updated user: {}", user_id);
 
         // Fetch and return updated user
-        self.collection
-            .find_one(doc! { "_id": object_id })
-            .await?
-            .ok_or_else(|| {
-                ApiError::InternalServerError("Failed to fetch updated user".to_string())
-            })
+        self.repository.find_by_id(object_id).await?.ok_or_else(|| {
+            ApiError::InternalServerError("Failed to fetch updated user".to_string())
+        })
     }
 
     /// Delete user by ID
@@ -256,10 +263,7 @@ impl UserService {
         let object_id = ObjectId::parse_str(user_id)
             .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
 
-        let result = self
-            .collection
-            .delete_one(doc! { "_id": object_id })
-            .await?;
+        let result = self.repository.delete(object_id).await?;
 
         if result.deleted_count == 0 {
             warn!("Delete failed: User not found with id: {}", user_id);
@@ -301,8 +305,8 @@ impl UserService {
 
         // Fetch user
         let user = self
-            .collection
-            .find_one(doc! { "_id": object_id })
+            .repository
+            .find_by_id(object_id)
             .await?
             .ok_or_else(|| {
                 warn!(
@@ -327,16 +331,8 @@ impl UserService {
         let new_password_hash = hash_password(&req.new_password)?;
 
         // Update password
-        self.collection
-            .update_one(
-                doc! { "_id": object_id },
-                doc! {
-                    "$set": {
-                        "password_hash": new_password_hash,
-                        "updated_at": mongodb::bson::DateTime::now()
-                    }
-                },
-            )
+        self.repository
+            .update_password(object_id, &new_password_hash)
             .await?;
 
         info!("Successfully changed password for user: {}", user_id);
@@ -358,8 +354,8 @@ impl UserService {
 
         // Fetch existing user to verify they exist
         let existing_user = self
-            .collection
-            .find_one(doc! { "_id": object_id })
+            .repository
+            .find_by_id(object_id)
             .await?
             .ok_or_else(|| {
                 warn!("Role update failed: User not found with id: {}", user_id);
@@ -376,16 +372,8 @@ impl UserService {
         }
 
         // Update the role
-        self.collection
-            .update_one(
-                doc! { "_id": object_id },
-                doc! {
-                    "$set": {
-                        "role": role.to_string(),
-                        "updated_at": mongodb::bson::DateTime::now()
-                    }
-                },
-            )
+        self.repository
+            .update_role(object_id, &role.to_string())
             .await?;
 
         info!(
@@ -394,12 +382,9 @@ impl UserService {
         );
 
         // Fetch and return updated user
-        self.collection
-            .find_one(doc! { "_id": object_id })
-            .await?
-            .ok_or_else(|| {
-                ApiError::InternalServerError("Failed to fetch updated user".to_string())
-            })
+        self.repository.find_by_id(object_id).await?.ok_or_else(|| {
+            ApiError::InternalServerError("Failed to fetch updated user".to_string())
+        })
     }
 
     /// Update user active status (admin only operation)
@@ -414,8 +399,8 @@ impl UserService {
 
         // Fetch existing user
         let existing_user = self
-            .collection
-            .find_one(doc! { "_id": object_id })
+            .repository
+            .find_by_id(object_id)
             .await?
             .ok_or_else(|| {
                 warn!("Status update failed: User not found with id: {}", user_id);
@@ -433,17 +418,7 @@ impl UserService {
         }
 
         // Update the status
-        self.collection
-            .update_one(
-                doc! { "_id": object_id },
-                doc! {
-                    "$set": {
-                        "is_active": is_active,
-                        "updated_at": mongodb::bson::DateTime::now()
-                    }
-                },
-            )
-            .await?;
+        self.repository.update_status(object_id, is_active).await?;
 
         info!(
             "Successfully {} user {}",
@@ -456,39 +431,20 @@ impl UserService {
         );
 
         // Fetch and return updated user
-        self.collection
-            .find_one(doc! { "_id": object_id })
-            .await?
-            .ok_or_else(|| {
-                ApiError::InternalServerError("Failed to fetch updated user".to_string())
-            })
+        self.repository.find_by_id(object_id).await?.ok_or_else(|| {
+            ApiError::InternalServerError("Failed to fetch updated user".to_string())
+        })
     }
 
     /// Get user statistics (admin only)
     pub async fn get_stats(&self) -> Result<UserStats, ApiError> {
         info!("Fetching user statistics");
 
-        let total_users = self.collection.count_documents(doc! {}).await?;
-
-        let active_users = self
-            .collection
-            .count_documents(doc! { "is_active": true })
-            .await?;
-
-        let inactive_users = self
-            .collection
-            .count_documents(doc! { "is_active": false })
-            .await?;
-
-        let admin_users = self
-            .collection
-            .count_documents(doc! { "role": "admin" })
-            .await?;
-
-        let regular_users = self
-            .collection
-            .count_documents(doc! { "role": "user" })
-            .await?;
+        let total_users = self.repository.count(doc! {}).await?;
+        let active_users = self.repository.count(doc! { "is_active": true }).await?;
+        let inactive_users = self.repository.count(doc! { "is_active": false }).await?;
+        let admin_users = self.repository.count(doc! { "role": "admin" }).await?;
+        let regular_users = self.repository.count(doc! { "role": "user" }).await?;
 
         debug!(
             "User stats: total={}, active={}, inactive={}, admins={}, regular={}",
@@ -578,38 +534,13 @@ impl UserService {
         let object_id = ObjectId::parse_str(user_id)
             .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
 
-        let result = self
-            .collection
-            .update_one(
-                doc! { "_id": object_id },
-                doc! {
-                    "$set": {
-                        "is_active": is_active,
-                        "updated_at": mongodb::bson::DateTime::now()
-                    }
-                },
-            )
-            .await?;
+        let result = self.repository.update_status(object_id, is_active).await?;
 
         if result.matched_count == 0 {
             return Err(ApiError::NotFound("User not found".to_string()));
         }
 
         Ok(())
-    }
-
-    async fn find_by_email(&self, email: &str) -> Result<Option<User>, ApiError> {
-        Ok(self
-            .collection
-            .find_one(doc! { "email": email.to_lowercase() })
-            .await?)
-    }
-
-    async fn find_by_username(&self, username: &str) -> Result<Option<User>, ApiError> {
-        Ok(self
-            .collection
-            .find_one(doc! { "username": username })
-            .await?)
     }
 
     /// Seed the database with an initial admin user if no admin exists
@@ -621,11 +552,7 @@ impl UserService {
         }
 
         // Check if any admin user already exists
-        let admin_exists = self
-            .collection
-            .find_one(doc! { "role": "Admin" })
-            .await?
-            .is_some();
+        let admin_exists = self.repository.find_by_role("Admin").await?.is_some();
 
         if admin_exists {
             info!("Admin user already exists, skipping seed");
@@ -633,7 +560,12 @@ impl UserService {
         }
 
         // Check if the configured admin email or username already exists
-        if self.find_by_email(&CONFIG.admin_email).await?.is_some() {
+        if self
+            .repository
+            .find_by_email(&CONFIG.admin_email)
+            .await?
+            .is_some()
+        {
             warn!(
                 "User with email {} already exists but is not an admin",
                 CONFIG.admin_email
@@ -642,6 +574,7 @@ impl UserService {
         }
 
         if self
+            .repository
             .find_by_username(&CONFIG.admin_username)
             .await?
             .is_some()
@@ -674,7 +607,7 @@ impl UserService {
             last_login: None,
         };
 
-        self.collection.insert_one(&admin_user).await?;
+        self.repository.insert(&admin_user).await?;
 
         info!(
             "✅ Admin user created successfully: {} ({})",

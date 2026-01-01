@@ -4,29 +4,37 @@ use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use log::debug;
-use mongodb::bson::doc;
-use mongodb::{Collection, Database};
+use mongodb::Database;
+use std::sync::Arc;
 
 use crate::config::CONFIG;
 use crate::errors::ApiError;
 use crate::models::{Claims, LoginRequest, User};
+use crate::repositories::UserRepository;
 
 /// Service for authentication operations.
 pub struct AuthService {
-    collection: Collection<User>,
+    repository: Arc<UserRepository>,
 }
 
 impl AuthService {
     /// Create a new AuthService instance.
     pub fn new(db: &Database) -> Self {
         Self {
-            collection: db.collection("users"),
+            repository: Arc::new(UserRepository::new(db)),
         }
+    }
+
+    /// Create a new AuthService with a shared repository (for dependency injection).
+    #[allow(dead_code)]
+    pub fn with_repository(repository: Arc<UserRepository>) -> Self {
+        Self { repository }
     }
 
     /// Authenticate a user and return a JWT token.
     pub async fn login(&self, req: LoginRequest) -> Result<(User, String), ApiError> {
         let user = self
+            .repository
             .find_by_email(&req.email)
             .await?
             .ok_or_else(|| ApiError::Unauthorized("Invalid email or password".to_string()))?;
@@ -44,25 +52,12 @@ impl AuthService {
 
         // Update last login
         let user_id = user.id.unwrap();
-        self.collection
-            .update_one(
-                doc! { "_id": user_id },
-                doc! { "$set": { "last_login": mongodb::bson::DateTime::now() } },
-            )
-            .await?;
+        self.repository.update_last_login(user_id).await?;
 
         // Generate JWT token
         let token = generate_token(&user)?;
 
         Ok((user, token))
-    }
-
-    /// Find a user by email.
-    async fn find_by_email(&self, email: &str) -> Result<Option<User>, ApiError> {
-        Ok(self
-            .collection
-            .find_one(doc! { "email": email.to_lowercase() })
-            .await?)
     }
 }
 
@@ -102,4 +97,3 @@ pub fn generate_token(user: &User) -> Result<String, ApiError> {
 
     Ok(token)
 }
-

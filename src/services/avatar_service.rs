@@ -1,23 +1,31 @@
 //! Avatar service for updating and deleting user avatars.
 
 use log::{info, warn};
-use mongodb::bson::{doc, oid::ObjectId};
-use mongodb::{Collection, Database};
+use mongodb::bson::oid::ObjectId;
+use mongodb::Database;
+use std::sync::Arc;
 
 use crate::errors::ApiError;
 use crate::models::{User, UserProfile};
+use crate::repositories::UserRepository;
 
 /// Service for avatar operations.
 pub struct AvatarService {
-    collection: Collection<User>,
+    repository: Arc<UserRepository>,
 }
 
 impl AvatarService {
     /// Create a new AvatarService instance.
     pub fn new(db: &Database) -> Self {
         Self {
-            collection: db.collection("users"),
+            repository: Arc::new(UserRepository::new(db)),
         }
+    }
+
+    /// Create a new AvatarService with a shared repository (for dependency injection).
+    #[allow(dead_code)]
+    pub fn with_repository(repository: Arc<UserRepository>) -> Self {
+        Self { repository }
     }
 
     /// Update user avatar URL.
@@ -29,25 +37,15 @@ impl AvatarService {
 
         // Verify user exists
         let existing = self
-            .collection
-            .find_one(doc! { "_id": object_id })
+            .repository
+            .find_by_id(object_id)
             .await?
             .ok_or_else(|| {
                 warn!("Avatar update failed: User not found with id: {}", user_id);
                 ApiError::NotFound("User not found".to_string())
             })?;
 
-        self.collection
-            .update_one(
-                doc! { "_id": object_id },
-                doc! {
-                    "$set": {
-                        "profile.avatar_url": avatar_url,
-                        "updated_at": mongodb::bson::DateTime::now()
-                    }
-                },
-            )
-            .await?;
+        self.repository.update_avatar(object_id, avatar_url).await?;
 
         info!("Successfully updated avatar for user: {}", user_id);
 
@@ -71,23 +69,15 @@ impl AvatarService {
 
         // Verify user exists
         let existing = self
-            .collection
-            .find_one(doc! { "_id": object_id })
+            .repository
+            .find_by_id(object_id)
             .await?
             .ok_or_else(|| {
                 warn!("Avatar delete failed: User not found with id: {}", user_id);
                 ApiError::NotFound("User not found".to_string())
             })?;
 
-        self.collection
-            .update_one(
-                doc! { "_id": object_id },
-                doc! {
-                    "$unset": { "profile.avatar_url": "" },
-                    "$set": { "updated_at": mongodb::bson::DateTime::now() }
-                },
-            )
-            .await?;
+        self.repository.delete_avatar(object_id).await?;
 
         info!("Successfully deleted avatar for user: {}", user_id);
 
@@ -107,7 +97,6 @@ impl AvatarService {
         let object_id = ObjectId::parse_str(id)
             .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
 
-        Ok(self.collection.find_one(doc! { "_id": object_id }).await?)
+        self.repository.find_by_id(object_id).await
     }
 }
-
