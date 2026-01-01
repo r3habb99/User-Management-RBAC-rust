@@ -107,6 +107,25 @@ pub struct ChangePasswordRequest {
     pub confirm_password: String,
 }
 
+/// Request payload for updating user role (admin only)
+#[derive(Debug, Deserialize, Validate)]
+pub struct UpdateRoleRequest {
+    #[validate(custom(function = "validate_role"))]
+    pub role: String,
+}
+
+/// Custom validator for role field
+fn validate_role(role: &str) -> Result<(), validator::ValidationError> {
+    match role.to_lowercase().as_str() {
+        "admin" | "user" => Ok(()),
+        _ => {
+            let mut error = validator::ValidationError::new("invalid_role");
+            error.message = Some("Role must be either 'admin' or 'user'".into());
+            Err(error)
+        }
+    }
+}
+
 /// Response for successful authentication
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {

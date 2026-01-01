@@ -6,7 +6,7 @@ use crate::errors::ApiError;
 use crate::middleware::RequestExt;
 use crate::models::{
     ApiResponse, AuthResponse, ChangePasswordRequest, LoginRequest, PaginatedResponse,
-    RegisterRequest, UpdateUserRequest, UserResponse,
+    RegisterRequest, UpdateRoleRequest, UpdateUserRequest, UserResponse,
 };
 use crate::services::UserService;
 
@@ -292,6 +292,73 @@ pub async fn change_password(
 
     info!("Successfully changed password for user: {}", user_id);
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::message("Password changed successfully")))
+}
+
+/// PATCH /api/users/{id}/role - Update user role (admin only)
+/// Only admins can promote or demote users
+pub async fn update_role(
+    user_service: web::Data<UserService>,
+    path: web::Path<String>,
+    body: web::Json<UpdateRoleRequest>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ApiError> {
+    let user_id = path.into_inner();
+
+    // Get current user from JWT claims
+    let claims = req.get_claims().ok_or_else(|| {
+        warn!("Failed to get claims from request for role update");
+        ApiError::Unauthorized("Authentication required".to_string())
+    })?;
+
+    // Only admins can update roles
+    if !claims.is_admin() {
+        warn!(
+            "Non-admin user {} attempted to update role of user {}",
+            claims.sub, user_id
+        );
+        return Err(ApiError::Unauthorized(
+            "Only administrators can update user roles".to_string(),
+        ));
+    }
+
+    // Prevent admin from demoting themselves
+    if claims.sub == user_id && body.role.to_lowercase() != "admin" {
+        warn!("Admin {} attempted to demote themselves", claims.sub);
+        return Err(ApiError::BadRequest(
+            "Administrators cannot demote themselves. Ask another admin to do this.".to_string(),
+        ));
+    }
+
+    // Validate input
+    body.validate().map_err(|e| {
+        let errors: Vec<String> = e
+            .field_errors()
+            .iter()
+            .flat_map(|(_, errs)| {
+                errs.iter()
+                    .map(|e| e.message.clone().unwrap_or_default().to_string())
+            })
+            .collect();
+        warn!("Validation failed for update role: {:?}", errors);
+        ApiError::ValidationError(errors)
+    })?;
+
+    info!(
+        "Admin {} updating role of user {} to {}",
+        claims.sub, user_id, body.role
+    );
+
+    let updated_user = user_service.update_role(&user_id, &body.role).await?;
+    let user_response: UserResponse = updated_user.into();
+
+    info!(
+        "Successfully updated role for user {} to {}",
+        user_id, body.role
+    );
+    Ok(HttpResponse::Ok().json(ApiResponse::success(
+        "User role updated successfully",
+        user_response,
+    )))
 }
 
 #[derive(Debug, serde::Deserialize)]

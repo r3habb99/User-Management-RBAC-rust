@@ -314,6 +314,66 @@ impl UserService {
         Ok(())
     }
 
+    /// Update user role (admin only operation)
+    pub async fn update_role(&self, user_id: &str, new_role: &str) -> Result<User, ApiError> {
+        info!(
+            "Updating role for user_id: {} to role: {}",
+            user_id, new_role
+        );
+
+        let object_id = ObjectId::parse_str(user_id)
+            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
+
+        // Parse the role string to Role enum
+        let role = Role::from_str(new_role);
+
+        // Fetch existing user to verify they exist
+        let existing_user = self
+            .collection
+            .find_one(doc! { "_id": object_id }, None)
+            .await?
+            .ok_or_else(|| {
+                warn!("Role update failed: User not found with id: {}", user_id);
+                ApiError::NotFound("User not found".to_string())
+            })?;
+
+        // Check if role is actually changing
+        if existing_user.role == role {
+            debug!(
+                "No role change needed for user {}: already has role {}",
+                user_id, new_role
+            );
+            return Ok(existing_user);
+        }
+
+        // Update the role
+        self.collection
+            .update_one(
+                doc! { "_id": object_id },
+                doc! {
+                    "$set": {
+                        "role": role.to_string(),
+                        "updated_at": bson::DateTime::now()
+                    }
+                },
+                None,
+            )
+            .await?;
+
+        info!(
+            "Successfully updated role for user {} from {} to {}",
+            user_id, existing_user.role, role
+        );
+
+        // Fetch and return updated user
+        self.collection
+            .find_one(doc! { "_id": object_id }, None)
+            .await?
+            .ok_or_else(|| {
+                ApiError::InternalServerError("Failed to fetch updated user".to_string())
+            })
+    }
+
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, ApiError> {
         Ok(self
             .collection

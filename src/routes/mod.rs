@@ -30,7 +30,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     // Delete user account
                     .route("/{id}", web::delete().to(handlers::delete_user))
                     // Change user password
-                    .route("/{id}/password", web::patch().to(handlers::change_password)),
+                    .route("/{id}/password", web::patch().to(handlers::change_password))
+                    // Update user role (admin only)
+                    .route("/{id}/role", web::patch().to(handlers::update_role)),
             ),
     );
 }
