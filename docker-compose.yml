@@ -1,18 +1,36 @@
-version: "3.8"
+# =============================================================================
+# User Management API - Docker Compose Configuration
+# =============================================================================
+# This file defines the complete stack for the User Management API:
+#   - MongoDB database
+#   - User Management API
+#   - MongoDB Express (optional, dev profile only)
+#
+# Usage:
+#   Production:  docker-compose up -d
+#   Development: docker-compose --profile dev up -d
+#   Stop:        docker-compose down
+#   Logs:        docker-compose logs -f api
+# =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
   # MongoDB Database
+  # ---------------------------------------------------------------------------
+  # Primary data store for user accounts and profiles
   mongodb:
     image: mongo:7.0
     container_name: user_management_mongodb
     restart: unless-stopped
     environment:
+      # MongoDB root credentials
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-password123}
       MONGO_INITDB_DATABASE: ${DATABASE_NAME:-user_management}
     ports:
       - "${MONGO_PORT:-27017}:27017"
     volumes:
+      # Persistent data storage
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
     networks:
@@ -24,7 +42,10 @@ services:
       retries: 5
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
   # User Management API
+  # ---------------------------------------------------------------------------
+  # Main REST API service for user management
   api:
     build:
       context: .
@@ -35,27 +56,41 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      # Server Configuration
+      # ----- Server Configuration -----
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
-      # MongoDB Configuration (connects to MongoDB container)
+
+      # ----- MongoDB Configuration -----
+      # Connects to MongoDB container using Docker network
       MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-password123}@mongodb:27017/${DATABASE_NAME:-user_management}?authSource=admin
       DATABASE_NAME: ${DATABASE_NAME:-user_management}
-      # JWT Configuration
+
+      # ----- JWT Configuration -----
+      # IMPORTANT: Change JWT_SECRET in production!
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
-      # File Upload
+
+      # ----- File Upload Configuration -----
       UPLOAD_DIR: /app/uploads
-      # Admin Seeding
+
+      # ----- Admin Seeding Configuration -----
+      # Creates initial admin user on first startup
       SEED_ADMIN: ${SEED_ADMIN:-true}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123456}
-      # Logging
+
+      # ----- CORS Configuration -----
+      # Comma-separated list of allowed origins
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000}
+
+      # ----- Logging Configuration -----
+      # Options: trace, debug, info, warn, error
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:
+      # Persistent storage for uploaded avatars
       - uploads_data:/app/uploads
     networks:
       - app_network
@@ -66,7 +101,11 @@ services:
       retries: 3
       start_period: 10s
 
-  # MongoDB Express (optional - for database management UI)
+  # ---------------------------------------------------------------------------
+  # MongoDB Express (Development Only)
+  # ---------------------------------------------------------------------------
+  # Web-based MongoDB admin interface
+  # Enable with: docker-compose --profile dev up -d
   mongo-express:
     image: mongo-express:1.0
     container_name: user_management_mongo_express
@@ -86,14 +125,25 @@ services:
     profiles:
       - dev
 
+# =============================================================================
+# Volumes
+# =============================================================================
+# Named volumes for persistent data storage
 volumes:
+  # MongoDB data files
   mongodb_data:
     driver: local
+  # MongoDB configuration
   mongodb_config:
     driver: local
+  # User avatar uploads
   uploads_data:
     driver: local
 
+# =============================================================================
+# Networks
+# =============================================================================
+# Internal network for service communication
 networks:
   app_network:
     driver: bridge
