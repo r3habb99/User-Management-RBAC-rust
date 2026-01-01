@@ -21,7 +21,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(AuthMiddleware)
                     // Get current authenticated user - must be before /{id} to avoid conflict
                     .route("/me", web::get().to(handlers::get_current_user))
-                    // List all users with pagination and filters
+                    // List all users with pagination, filters, and search
                     .route("", web::get().to(handlers::get_users))
                     // Get specific user by ID
                     .route("/{id}", web::get().to(handlers::get_user))
@@ -34,7 +34,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     // Update user role (admin only)
                     .route("/{id}/role", web::patch().to(handlers::update_role))
                     // Update user active status (admin only)
-                    .route("/{id}/status", web::patch().to(handlers::update_status)),
+                    .route("/{id}/status", web::patch().to(handlers::update_status))
+                    // Upload user avatar
+                    .route("/{id}/avatar", web::post().to(handlers::upload_avatar))
+                    // Delete user avatar
+                    .route("/{id}/avatar", web::delete().to(handlers::delete_avatar)),
             )
             // Admin routes (protected, admin only)
             .service(

@@ -14,6 +14,7 @@ pub struct Config {
     pub database_name: String,
     pub jwt_secret: String,
     pub jwt_expiration_hours: i64,
+    pub upload_dir: String,
 }
 
 impl Config {
@@ -36,7 +37,7 @@ impl Config {
                 .unwrap_or_else(|_| "24".to_string())
                 .parse()
                 .expect("JWT_EXPIRATION_HOURS must be a valid number"),
+            upload_dir: env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string()),
         }
     }
 }
-

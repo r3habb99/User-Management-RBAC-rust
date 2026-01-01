@@ -6,6 +6,7 @@ mod models;
 mod routes;
 mod services;
 
+use actix_files::Files;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use log::info;
 use mongodb::Client;
@@ -19,6 +20,13 @@ async fn main() -> std::io::Result<()> {
     dotenv::dotenv().ok();
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
+    // Create uploads directory if it doesn't exist
+    let upload_dir = &CONFIG.upload_dir;
+    if !std::path::Path::new(upload_dir).exists() {
+        std::fs::create_dir_all(upload_dir).expect("Failed to create uploads directory");
+        info!("Created uploads directory: {}", upload_dir);
+    }
+
     // Connect to MongoDB
     info!("Connecting to MongoDB...");
     let client = Client::with_uri_str(&CONFIG.mongodb_uri)
@@ -28,13 +36,16 @@ async fn main() -> std::io::Result<()> {
     let db = client.database(&CONFIG.database_name);
 
     // Test MongoDB connection
-    db.run_command(bson::doc! { "ping": 1 }, None)
+    db.run_command(mongodb::bson::doc! { "ping": 1 })
         .await
         .expect("Failed to ping MongoDB");
     info!("Connected to MongoDB successfully!");
 
     // Initialize services
     let user_service = web::Data::new(UserService::new(&db));
+
+    // Clone upload_dir for use in HttpServer closure
+    let upload_dir_clone = upload_dir.clone();
 
     // Start HTTP server
     let server_addr = format!("{}:{}", CONFIG.server_host, CONFIG.server_port);
@@ -45,6 +56,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .app_data(user_service.clone())
             .configure(routes::configure_routes)
+            // Serve uploaded files
+            .service(Files::new("/uploads", &upload_dir_clone).show_files_listing())
     })
     .bind(&server_addr)?
     .run()

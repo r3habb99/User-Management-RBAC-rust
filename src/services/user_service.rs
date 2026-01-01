@@ -1,8 +1,8 @@
 use bcrypt::{hash, verify, DEFAULT_COST};
-use bson::{doc, oid::ObjectId};
 use chrono::Utc;
 use futures::TryStreamExt;
 use jsonwebtoken::{encode, EncodingKey, Header};
+use mongodb::bson::{doc, oid::ObjectId};
 use mongodb::{Collection, Database};
 
 use log::{debug, info, warn};
@@ -11,7 +11,7 @@ use crate::config::CONFIG;
 use crate::errors::ApiError;
 use crate::models::{
     BulkUpdateResponse, BulkUpdateResult, ChangePasswordRequest, Claims, LoginRequest,
-    RegisterRequest, Role, UpdateUserRequest, User, UserResponse, UserStats,
+    RegisterRequest, Role, UpdateUserRequest, User, UserProfile, UserResponse, UserStats,
 };
 
 pub struct UserService {
@@ -38,7 +38,7 @@ impl UserService {
         // Hash password
         let password_hash = hash(&req.password, DEFAULT_COST)?;
 
-        let now = bson::DateTime::now();
+        let now = mongodb::bson::DateTime::now();
         let user = User {
             id: None,
             email: req.email.to_lowercase(),
@@ -46,12 +46,13 @@ impl UserService {
             password_hash,
             role: Role::User, // Default role for new registrations
             is_active: true,
+            profile: UserProfile::default(),
             created_at: now,
             updated_at: now,
             last_login: None,
         };
 
-        let result = self.collection.insert_one(&user, None).await?;
+        let result = self.collection.insert_one(&user).await?;
         let id = result.inserted_id.as_object_id().unwrap();
 
         Ok(User {
@@ -82,8 +83,7 @@ impl UserService {
         self.collection
             .update_one(
                 doc! { "_id": user_id },
-                doc! { "$set": { "last_login": Utc::now() } },
-                None,
+                doc! { "$set": { "last_login": mongodb::bson::DateTime::now() } },
             )
             .await?;
 
@@ -99,6 +99,7 @@ impl UserService {
         per_page: u64,
         role_filter: Option<&str>,
         active_filter: Option<bool>,
+        search_query: Option<&str>,
     ) -> Result<(Vec<UserResponse>, u64), ApiError> {
         // Build filter document
         let mut filter = doc! {};
@@ -111,24 +112,37 @@ impl UserService {
             filter.insert("is_active", is_active);
         }
 
+        // Add search filter for username, email, first_name, last_name
+        if let Some(search) = search_query {
+            if !search.trim().is_empty() {
+                let search_pattern = regex::escape(search.trim());
+                let search_regex = mongodb::bson::Regex {
+                    pattern: search_pattern,
+                    options: "i".to_string(), // case-insensitive
+                };
+                filter.insert(
+                    "$or",
+                    vec![
+                        doc! { "username": { "$regex": &search_regex } },
+                        doc! { "email": { "$regex": &search_regex } },
+                        doc! { "profile.first_name": { "$regex": &search_regex } },
+                        doc! { "profile.last_name": { "$regex": &search_regex } },
+                    ],
+                );
+            }
+        }
+
         debug!("Fetching users with filter: {:?}", filter);
 
-        let total = self
-            .collection
-            .count_documents(filter.clone(), None)
-            .await?;
+        let total = self.collection.count_documents(filter.clone()).await?;
         let skip = (page - 1) * per_page;
 
         let cursor = self
             .collection
-            .find(
-                filter,
-                mongodb::options::FindOptions::builder()
-                    .skip(skip)
-                    .limit(per_page as i64)
-                    .sort(doc! { "created_at": -1 })
-                    .build(),
-            )
+            .find(filter)
+            .skip(skip)
+            .limit(per_page as i64)
+            .sort(doc! { "created_at": -1 })
             .await?;
 
         let users: Vec<User> = cursor.try_collect().await?;
@@ -142,10 +156,7 @@ impl UserService {
         let object_id = ObjectId::parse_str(id)
             .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
 
-        Ok(self
-            .collection
-            .find_one(doc! { "_id": object_id }, None)
-            .await?)
+        Ok(self.collection.find_one(doc! { "_id": object_id }).await?)
     }
 
     /// Update user profile (email and/or username)
@@ -162,7 +173,7 @@ impl UserService {
         // Fetch existing user
         let existing_user = self
             .collection
-            .find_one(doc! { "_id": object_id }, None)
+            .find_one(doc! { "_id": object_id })
             .await?
             .ok_or_else(|| {
                 warn!("Update failed: User not found with id: {}", user_id);
@@ -210,27 +221,145 @@ impl UserService {
             }
         }
 
+        // Update profile fields
+        if let Some(ref first_name) = req.first_name {
+            update_doc.insert("profile.first_name", first_name.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref last_name) = req.last_name {
+            update_doc.insert("profile.last_name", last_name.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref phone) = req.phone {
+            update_doc.insert("profile.phone", phone.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref bio) = req.bio {
+            update_doc.insert("profile.bio", bio.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref location) = req.location {
+            update_doc.insert("profile.location", location.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref website) = req.website {
+            update_doc.insert("profile.website", website.clone());
+            has_updates = true;
+        }
+
+        if let Some(ref date_of_birth) = req.date_of_birth {
+            update_doc.insert("profile.date_of_birth", date_of_birth.clone());
+            has_updates = true;
+        }
+
         if !has_updates {
             debug!("No changes detected for user: {}", user_id);
             return Ok(existing_user);
         }
 
         // Add updated_at timestamp
-        update_doc.insert("updated_at", bson::DateTime::now());
+        update_doc.insert("updated_at", mongodb::bson::DateTime::now());
 
         self.collection
-            .update_one(doc! { "_id": object_id }, doc! { "$set": update_doc }, None)
+            .update_one(doc! { "_id": object_id }, doc! { "$set": update_doc })
             .await?;
 
         info!("Successfully updated user: {}", user_id);
 
         // Fetch and return updated user
         self.collection
-            .find_one(doc! { "_id": object_id }, None)
+            .find_one(doc! { "_id": object_id })
             .await?
             .ok_or_else(|| {
                 ApiError::InternalServerError("Failed to fetch updated user".to_string())
             })
+    }
+
+    /// Update user avatar URL
+    pub async fn update_avatar(&self, user_id: &str, avatar_url: &str) -> Result<User, ApiError> {
+        info!("Updating avatar for user_id: {}", user_id);
+
+        let object_id = ObjectId::parse_str(user_id)
+            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
+
+        // Verify user exists
+        let existing = self
+            .collection
+            .find_one(doc! { "_id": object_id })
+            .await?
+            .ok_or_else(|| {
+                warn!("Avatar update failed: User not found with id: {}", user_id);
+                ApiError::NotFound("User not found".to_string())
+            })?;
+
+        self.collection
+            .update_one(
+                doc! { "_id": object_id },
+                doc! {
+                    "$set": {
+                        "profile.avatar_url": avatar_url,
+                        "updated_at": mongodb::bson::DateTime::now()
+                    }
+                },
+            )
+            .await?;
+
+        info!("Successfully updated avatar for user: {}", user_id);
+
+        // Return updated user
+        Ok(User {
+            profile: UserProfile {
+                avatar_url: Some(avatar_url.to_string()),
+                ..existing.profile
+            },
+            updated_at: mongodb::bson::DateTime::now(),
+            ..existing
+        })
+    }
+
+    /// Delete user avatar
+    pub async fn delete_avatar(&self, user_id: &str) -> Result<User, ApiError> {
+        info!("Deleting avatar for user_id: {}", user_id);
+
+        let object_id = ObjectId::parse_str(user_id)
+            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
+
+        // Verify user exists
+        let existing = self
+            .collection
+            .find_one(doc! { "_id": object_id })
+            .await?
+            .ok_or_else(|| {
+                warn!("Avatar delete failed: User not found with id: {}", user_id);
+                ApiError::NotFound("User not found".to_string())
+            })?;
+
+        self.collection
+            .update_one(
+                doc! { "_id": object_id },
+                doc! {
+                    "$unset": { "profile.avatar_url": "" },
+                    "$set": { "updated_at": mongodb::bson::DateTime::now() }
+                },
+            )
+            .await?;
+
+        info!("Successfully deleted avatar for user: {}", user_id);
+
+        // Return updated user
+        Ok(User {
+            profile: UserProfile {
+                avatar_url: None,
+                ..existing.profile
+            },
+            updated_at: mongodb::bson::DateTime::now(),
+            ..existing
+        })
     }
 
     /// Delete user by ID
@@ -242,7 +371,7 @@ impl UserService {
 
         let result = self
             .collection
-            .delete_one(doc! { "_id": object_id }, None)
+            .delete_one(doc! { "_id": object_id })
             .await?;
 
         if result.deleted_count == 0 {
@@ -290,7 +419,7 @@ impl UserService {
         // Fetch user
         let user = self
             .collection
-            .find_one(doc! { "_id": object_id }, None)
+            .find_one(doc! { "_id": object_id })
             .await?
             .ok_or_else(|| {
                 warn!(
@@ -321,10 +450,9 @@ impl UserService {
                 doc! {
                     "$set": {
                         "password_hash": new_password_hash,
-                        "updated_at": bson::DateTime::now()
+                        "updated_at": mongodb::bson::DateTime::now()
                     }
                 },
-                None,
             )
             .await?;
 
@@ -348,7 +476,7 @@ impl UserService {
         // Fetch existing user to verify they exist
         let existing_user = self
             .collection
-            .find_one(doc! { "_id": object_id }, None)
+            .find_one(doc! { "_id": object_id })
             .await?
             .ok_or_else(|| {
                 warn!("Role update failed: User not found with id: {}", user_id);
@@ -371,10 +499,9 @@ impl UserService {
                 doc! {
                     "$set": {
                         "role": role.to_string(),
-                        "updated_at": bson::DateTime::now()
+                        "updated_at": mongodb::bson::DateTime::now()
                     }
                 },
-                None,
             )
             .await?;
 
@@ -385,7 +512,7 @@ impl UserService {
 
         // Fetch and return updated user
         self.collection
-            .find_one(doc! { "_id": object_id }, None)
+            .find_one(doc! { "_id": object_id })
             .await?
             .ok_or_else(|| {
                 ApiError::InternalServerError("Failed to fetch updated user".to_string())
@@ -405,7 +532,7 @@ impl UserService {
         // Fetch existing user
         let existing_user = self
             .collection
-            .find_one(doc! { "_id": object_id }, None)
+            .find_one(doc! { "_id": object_id })
             .await?
             .ok_or_else(|| {
                 warn!("Status update failed: User not found with id: {}", user_id);
@@ -429,10 +556,9 @@ impl UserService {
                 doc! {
                     "$set": {
                         "is_active": is_active,
-                        "updated_at": bson::DateTime::now()
+                        "updated_at": mongodb::bson::DateTime::now()
                     }
                 },
-                None,
             )
             .await?;
 
@@ -448,7 +574,7 @@ impl UserService {
 
         // Fetch and return updated user
         self.collection
-            .find_one(doc! { "_id": object_id }, None)
+            .find_one(doc! { "_id": object_id })
             .await?
             .ok_or_else(|| {
                 ApiError::InternalServerError("Failed to fetch updated user".to_string())
@@ -459,26 +585,26 @@ impl UserService {
     pub async fn get_stats(&self) -> Result<UserStats, ApiError> {
         info!("Fetching user statistics");
 
-        let total_users = self.collection.count_documents(doc! {}, None).await?;
+        let total_users = self.collection.count_documents(doc! {}).await?;
 
         let active_users = self
             .collection
-            .count_documents(doc! { "is_active": true }, None)
+            .count_documents(doc! { "is_active": true })
             .await?;
 
         let inactive_users = self
             .collection
-            .count_documents(doc! { "is_active": false }, None)
+            .count_documents(doc! { "is_active": false })
             .await?;
 
         let admin_users = self
             .collection
-            .count_documents(doc! { "role": "admin" }, None)
+            .count_documents(doc! { "role": "admin" })
             .await?;
 
         let regular_users = self
             .collection
-            .count_documents(doc! { "role": "user" }, None)
+            .count_documents(doc! { "role": "user" })
             .await?;
 
         debug!(
@@ -576,10 +702,9 @@ impl UserService {
                 doc! {
                     "$set": {
                         "is_active": is_active,
-                        "updated_at": bson::DateTime::now()
+                        "updated_at": mongodb::bson::DateTime::now()
                     }
                 },
-                None,
             )
             .await?;
 
@@ -593,14 +718,14 @@ impl UserService {
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, ApiError> {
         Ok(self
             .collection
-            .find_one(doc! { "email": email.to_lowercase() }, None)
+            .find_one(doc! { "email": email.to_lowercase() })
             .await?)
     }
 
     async fn find_by_username(&self, username: &str) -> Result<Option<User>, ApiError> {
         Ok(self
             .collection
-            .find_one(doc! { "username": username }, None)
+            .find_one(doc! { "username": username })
             .await?)
     }
 

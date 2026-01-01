@@ -1,5 +1,5 @@
-use bson::oid::ObjectId;
 use chrono::{DateTime, Utc};
+use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use validator::Validate;
@@ -42,6 +42,27 @@ impl Role {
     }
 }
 
+/// User profile information
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct UserProfile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub website: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_of_birth: Option<String>,
+}
+
 /// User document stored in MongoDB
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct User {
@@ -53,10 +74,12 @@ pub struct User {
     #[serde(default)]
     pub role: Role,
     pub is_active: bool,
-    pub created_at: bson::DateTime,
-    pub updated_at: bson::DateTime,
+    #[serde(default)]
+    pub profile: UserProfile,
+    pub created_at: mongodb::bson::DateTime,
+    pub updated_at: mongodb::bson::DateTime,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_login: Option<bson::DateTime>,
+    pub last_login: Option<mongodb::bson::DateTime>,
 }
 
 /// Request payload for user registration
@@ -94,6 +117,20 @@ pub struct UpdateUserRequest {
         message = "Username must be between 3 and 50 characters"
     ))]
     pub username: Option<String>,
+    #[validate(length(max = 50, message = "First name must be at most 50 characters"))]
+    pub first_name: Option<String>,
+    #[validate(length(max = 50, message = "Last name must be at most 50 characters"))]
+    pub last_name: Option<String>,
+    #[validate(length(max = 20, message = "Phone must be at most 20 characters"))]
+    pub phone: Option<String>,
+    #[validate(length(max = 500, message = "Bio must be at most 500 characters"))]
+    pub bio: Option<String>,
+    #[validate(length(max = 100, message = "Location must be at most 100 characters"))]
+    pub location: Option<String>,
+    #[validate(url(message = "Website must be a valid URL"))]
+    pub website: Option<String>,
+    /// Date of birth in YYYY-MM-DD format
+    pub date_of_birth: Option<String>,
 }
 
 /// Request payload for changing password
@@ -177,6 +214,42 @@ pub struct AuthResponse {
     pub user: UserResponse,
 }
 
+/// User profile data returned in API responses
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct UserProfileResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub website: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_of_birth: Option<String>,
+}
+
+impl From<UserProfile> for UserProfileResponse {
+    fn from(profile: UserProfile) -> Self {
+        Self {
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            avatar_url: profile.avatar_url,
+            phone: profile.phone,
+            bio: profile.bio,
+            location: profile.location,
+            website: profile.website,
+            date_of_birth: profile.date_of_birth,
+        }
+    }
+}
+
 /// User data returned in API responses (without sensitive fields)
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UserResponse {
@@ -185,6 +258,7 @@ pub struct UserResponse {
     pub username: String,
     pub role: Role,
     pub is_active: bool,
+    pub profile: UserProfileResponse,
     pub created_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_login: Option<DateTime<Utc>>,
@@ -198,8 +272,12 @@ impl From<User> for UserResponse {
             username: user.username,
             role: user.role,
             is_active: user.is_active,
-            created_at: user.created_at.to_chrono(),
-            last_login: user.last_login.map(|dt| dt.to_chrono()),
+            profile: user.profile.into(),
+            created_at: DateTime::from_timestamp_millis(user.created_at.timestamp_millis())
+                .unwrap_or_default(),
+            last_login: user.last_login.map(|dt| {
+                DateTime::from_timestamp_millis(dt.timestamp_millis()).unwrap_or_default()
+            }),
         }
     }
 }
