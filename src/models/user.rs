@@ -132,6 +132,32 @@ pub struct UpdateStatusRequest {
     pub is_active: bool,
 }
 
+/// Request payload for bulk updating user status (admin only)
+#[derive(Debug, Deserialize)]
+pub struct BulkUpdateStatusRequest {
+    /// List of user IDs to update
+    pub user_ids: Vec<String>,
+    /// New status to set for all users
+    pub is_active: bool,
+}
+
+/// Result of a single user update in bulk operation
+#[derive(Debug, Serialize)]
+pub struct BulkUpdateResult {
+    pub user_id: String,
+    pub success: bool,
+    pub message: String,
+}
+
+/// Response for bulk update operations
+#[derive(Debug, Serialize)]
+pub struct BulkUpdateResponse {
+    pub total_requested: usize,
+    pub successful: usize,
+    pub failed: usize,
+    pub results: Vec<BulkUpdateResult>,
+}
+
 /// User statistics response (admin only)
 #[derive(Debug, Serialize)]
 pub struct UserStats {

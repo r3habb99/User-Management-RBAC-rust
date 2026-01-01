@@ -10,8 +10,8 @@ use log::{debug, info, warn};
 use crate::config::CONFIG;
 use crate::errors::ApiError;
 use crate::models::{
-    ChangePasswordRequest, Claims, LoginRequest, RegisterRequest, Role, UpdateUserRequest, User,
-    UserResponse, UserStats,
+    BulkUpdateResponse, BulkUpdateResult, ChangePasswordRequest, Claims, LoginRequest,
+    RegisterRequest, Role, UpdateUserRequest, User, UserResponse, UserStats,
 };
 
 pub struct UserService {
@@ -493,6 +493,101 @@ impl UserService {
             admin_users,
             regular_users,
         })
+    }
+
+    /// Bulk update user status (admin only)
+    /// Updates multiple users' active status at once
+    /// Returns detailed results for each user
+    pub async fn bulk_update_status(
+        &self,
+        user_ids: &[String],
+        is_active: bool,
+        admin_user_id: &str,
+    ) -> Result<BulkUpdateResponse, ApiError> {
+        info!(
+            "Bulk updating {} users to is_active={}",
+            user_ids.len(),
+            is_active
+        );
+
+        let mut results: Vec<BulkUpdateResult> = Vec::with_capacity(user_ids.len());
+        let mut successful = 0;
+        let mut failed = 0;
+
+        for user_id in user_ids {
+            // Skip if admin is trying to deactivate themselves
+            if user_id == admin_user_id && !is_active {
+                results.push(BulkUpdateResult {
+                    user_id: user_id.clone(),
+                    success: false,
+                    message: "Cannot deactivate yourself".to_string(),
+                });
+                failed += 1;
+                continue;
+            }
+
+            // Try to update the user
+            match self.update_status_internal(user_id, is_active).await {
+                Ok(_) => {
+                    results.push(BulkUpdateResult {
+                        user_id: user_id.clone(),
+                        success: true,
+                        message: if is_active {
+                            "User activated".to_string()
+                        } else {
+                            "User deactivated".to_string()
+                        },
+                    });
+                    successful += 1;
+                }
+                Err(e) => {
+                    results.push(BulkUpdateResult {
+                        user_id: user_id.clone(),
+                        success: false,
+                        message: e.to_string(),
+                    });
+                    failed += 1;
+                }
+            }
+        }
+
+        info!(
+            "Bulk update complete: {} successful, {} failed",
+            successful, failed
+        );
+
+        Ok(BulkUpdateResponse {
+            total_requested: user_ids.len(),
+            successful,
+            failed,
+            results,
+        })
+    }
+
+    /// Internal helper for updating user status (no self-deactivation check)
+    async fn update_status_internal(&self, user_id: &str, is_active: bool) -> Result<(), ApiError> {
+        let object_id = ObjectId::parse_str(user_id)
+            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
+
+        let result = self
+            .collection
+            .update_one(
+                doc! { "_id": object_id },
+                doc! {
+                    "$set": {
+                        "is_active": is_active,
+                        "updated_at": bson::DateTime::now()
+                    }
+                },
+                None,
+            )
+            .await?;
+
+        if result.matched_count == 0 {
+            return Err(ApiError::NotFound("User not found".to_string()));
+        }
+
+        Ok(())
     }
 
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, ApiError> {

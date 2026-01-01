@@ -5,9 +5,9 @@ use validator::Validate;
 use crate::errors::ApiError;
 use crate::middleware::RequestExt;
 use crate::models::{
-    ApiResponse, AuthResponse, ChangePasswordRequest, LoginRequest, PaginatedResponse,
-    RegisterRequest, UpdateRoleRequest, UpdateStatusRequest, UpdateUserRequest, UserResponse,
-    UserStats,
+    ApiResponse, AuthResponse, BulkUpdateStatusRequest, ChangePasswordRequest, LoginRequest,
+    PaginatedResponse, RegisterRequest, UpdateRoleRequest, UpdateStatusRequest, UpdateUserRequest,
+    UserResponse, UserStats,
 };
 use crate::services::UserService;
 
@@ -461,4 +461,64 @@ pub async fn get_user_stats(
     let stats: UserStats = user_service.get_stats().await?;
 
     Ok(HttpResponse::Ok().json(ApiResponse::success("User statistics", stats)))
+}
+
+/// PATCH /api/admin/users/bulk-status - Bulk update user status (admin only)
+/// Activate or deactivate multiple users at once
+pub async fn bulk_update_status(
+    user_service: web::Data<UserService>,
+    body: web::Json<BulkUpdateStatusRequest>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ApiError> {
+    // Get current user from JWT claims
+    let claims = req.get_claims().ok_or_else(|| {
+        warn!("Failed to get claims from request for bulk status update");
+        ApiError::Unauthorized("Authentication required".to_string())
+    })?;
+
+    // Only admins can perform bulk operations
+    if !claims.is_admin() {
+        warn!("Non-admin user {} attempted bulk status update", claims.sub);
+        return Err(ApiError::Unauthorized(
+            "Only administrators can perform bulk operations".to_string(),
+        ));
+    }
+
+    // Validate that we have at least one user ID
+    if body.user_ids.is_empty() {
+        return Err(ApiError::BadRequest(
+            "At least one user ID is required".to_string(),
+        ));
+    }
+
+    // Limit bulk operations to prevent abuse
+    const MAX_BULK_SIZE: usize = 100;
+    if body.user_ids.len() > MAX_BULK_SIZE {
+        return Err(ApiError::BadRequest(format!(
+            "Maximum {} users can be updated at once",
+            MAX_BULK_SIZE
+        )));
+    }
+
+    info!(
+        "Admin {} performing bulk {} on {} users",
+        claims.sub,
+        if body.is_active {
+            "activation"
+        } else {
+            "deactivation"
+        },
+        body.user_ids.len()
+    );
+
+    let response = user_service
+        .bulk_update_status(&body.user_ids, body.is_active, &claims.sub)
+        .await?;
+
+    let message = format!(
+        "Bulk update complete: {} successful, {} failed",
+        response.successful, response.failed
+    );
+
+    Ok(HttpResponse::Ok().json(ApiResponse::success(&message, response)))
 }

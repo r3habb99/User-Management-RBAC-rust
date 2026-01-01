@@ -41,7 +41,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::scope("/admin")
                     .wrap(AuthMiddleware)
                     // Get user statistics
-                    .route("/stats", web::get().to(handlers::get_user_stats)),
+                    .route("/stats", web::get().to(handlers::get_user_stats))
+                    // Bulk update user status
+                    .route(
+                        "/users/bulk-status",
+                        web::patch().to(handlers::bulk_update_status),
+                    ),
             ),
     );
 }
