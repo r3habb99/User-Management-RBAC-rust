@@ -4,7 +4,9 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 use validator::Validate;
 
-use crate::validators::validate_role;
+use crate::validators::{
+    validate_date_of_birth, validate_password_strength, validate_role, validate_username_format,
+};
 
 /// Request payload for updating user profile
 #[derive(Debug, Deserialize, Validate, ToSchema)]
@@ -13,12 +15,15 @@ pub struct UpdateUserRequest {
     #[validate(email(message = "Invalid email format"))]
     #[schema(example = "newemail@example.com")]
     pub email: Option<String>,
-    /// New username (3-50 characters)
-    #[validate(length(
-        min = 3,
-        max = 50,
-        message = "Username must be between 3 and 50 characters"
-    ))]
+    /// New username (3-50 characters, letters, numbers, underscores, hyphens only)
+    #[validate(
+        length(
+            min = 3,
+            max = 50,
+            message = "Username must be between 3 and 50 characters"
+        ),
+        custom(function = "validate_username_format")
+    )]
     #[schema(example = "newusername")]
     pub username: Option<String>,
     /// First name (max 50 characters)
@@ -46,6 +51,7 @@ pub struct UpdateUserRequest {
     #[schema(example = "https://example.com")]
     pub website: Option<String>,
     /// Date of birth in YYYY-MM-DD format
+    #[validate(custom(function = "validate_date_of_birth"))]
     #[schema(example = "1990-01-15")]
     pub date_of_birth: Option<String>,
 }
@@ -55,15 +61,15 @@ pub struct UpdateUserRequest {
 pub struct ChangePasswordRequest {
     /// Current password for verification
     #[validate(length(min = 1, message = "Current password is required"))]
-    #[schema(example = "currentPassword123")]
+    #[schema(example = "CurrentPass123!")]
     pub current_password: String,
-    /// New password (minimum 8 characters)
-    #[validate(length(min = 8, message = "New password must be at least 8 characters"))]
-    #[schema(example = "newSecurePassword456")]
+    /// New password (minimum 8 characters with uppercase, lowercase, digit, and special character)
+    #[validate(custom(function = "validate_password_strength"))]
+    #[schema(example = "NewSecurePass456!")]
     pub new_password: String,
     /// Confirm new password
-    #[validate(length(min = 8, message = "Confirm password must be at least 8 characters"))]
-    #[schema(example = "newSecurePassword456")]
+    #[validate(custom(function = "validate_password_strength"))]
+    #[schema(example = "NewSecurePass456!")]
     pub confirm_password: String,
 }
 
