@@ -754,4 +754,77 @@ impl UserService {
 
         Ok(token)
     }
+
+    /// Seed the database with an initial admin user if no admin exists
+    /// This is called on application startup when SEED_ADMIN is true
+    pub async fn seed_admin(&self) -> Result<(), ApiError> {
+        if !CONFIG.seed_admin {
+            info!("Admin seeding is disabled (SEED_ADMIN=false)");
+            return Ok(());
+        }
+
+        // Check if any admin user already exists
+        let admin_exists = self
+            .collection
+            .find_one(doc! { "role": "Admin" })
+            .await?
+            .is_some();
+
+        if admin_exists {
+            info!("Admin user already exists, skipping seed");
+            return Ok(());
+        }
+
+        // Check if the configured admin email or username already exists
+        if self.find_by_email(&CONFIG.admin_email).await?.is_some() {
+            warn!(
+                "User with email {} already exists but is not an admin",
+                CONFIG.admin_email
+            );
+            return Ok(());
+        }
+
+        if self
+            .find_by_username(&CONFIG.admin_username)
+            .await?
+            .is_some()
+        {
+            warn!(
+                "User with username {} already exists but is not an admin",
+                CONFIG.admin_username
+            );
+            return Ok(());
+        }
+
+        // Create the admin user
+        let password_hash = hash(&CONFIG.admin_password, DEFAULT_COST)?;
+        let now = mongodb::bson::DateTime::now();
+
+        let admin_user = User {
+            id: None,
+            email: CONFIG.admin_email.to_lowercase(),
+            username: CONFIG.admin_username.clone(),
+            password_hash,
+            role: Role::Admin,
+            is_active: true,
+            profile: UserProfile {
+                first_name: Some("System".to_string()),
+                last_name: Some("Administrator".to_string()),
+                ..Default::default()
+            },
+            created_at: now,
+            updated_at: now,
+            last_login: None,
+        };
+
+        self.collection.insert_one(&admin_user).await?;
+
+        info!(
+            "✅ Admin user created successfully: {} ({})",
+            CONFIG.admin_username, CONFIG.admin_email
+        );
+        info!("⚠️  Please change the default admin password after first login!");
+
+        Ok(())
+    }
 }

@@ -46,6 +46,11 @@ services:
       JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
       # File Upload
       UPLOAD_DIR: /app/uploads
+      # Admin Seeding
+      SEED_ADMIN: ${SEED_ADMIN:-true}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123456}
       # Logging
       RUST_LOG: ${RUST_LOG:-info}
     ports:

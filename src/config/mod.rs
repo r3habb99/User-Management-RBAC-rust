@@ -15,6 +15,13 @@ pub struct Config {
     pub jwt_secret: String,
     pub jwt_expiration_hours: i64,
     pub upload_dir: String,
+    // Admin seeding configuration
+    pub admin_email: String,
+    pub admin_username: String,
+    pub admin_password: String,
+    pub seed_admin: bool,
+    // CORS configuration
+    pub cors_origins: Vec<String>,
 }
 
 impl Config {
@@ -38,6 +45,21 @@ impl Config {
                 .parse()
                 .expect("JWT_EXPIRATION_HOURS must be a valid number"),
             upload_dir: env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string()),
+            // Admin seeding configuration
+            admin_email: env::var("ADMIN_EMAIL").unwrap_or_else(|_| "admin@test.com".to_string()),
+            admin_username: env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".to_string()),
+            admin_password: env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "Admin@2026".to_string()),
+            seed_admin: env::var("SEED_ADMIN")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse()
+                .unwrap_or(true),
+            // CORS origins (comma-separated list)
+            cors_origins: env::var("CORS_ORIGINS")
+                .unwrap_or_else(|_| "http://127.0.0.1:8080,http://localhost:8080".to_string())
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
         }
     }
 }

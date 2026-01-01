@@ -7,8 +7,9 @@ mod openapi;
 mod routes;
 mod services;
 
+use actix_cors::Cors;
 use actix_files::Files;
-use actix_web::{middleware::Logger, web, App, HttpServer};
+use actix_web::{http::header, middleware::Logger, web, App, HttpServer};
 use log::info;
 use mongodb::Client;
 use utoipa::OpenApi;
@@ -46,7 +47,14 @@ async fn main() -> std::io::Result<()> {
     info!("Connected to MongoDB successfully!");
 
     // Initialize services
-    let user_service = web::Data::new(UserService::new(&db));
+    let user_service = UserService::new(&db);
+
+    // Seed admin user if needed
+    if let Err(e) = user_service.seed_admin().await {
+        log::error!("Failed to seed admin user: {}", e);
+    }
+
+    let user_service = web::Data::new(user_service);
 
     // Clone upload_dir for use in HttpServer closure
     let upload_dir_clone = upload_dir.clone();
@@ -60,8 +68,28 @@ async fn main() -> std::io::Result<()> {
 
     info!("Swagger UI available at http://{}/swagger-ui/", server_addr);
 
+    // Clone cors_origins for use in HttpServer closure
+    let cors_origins = CONFIG.cors_origins.clone();
+
     HttpServer::new(move || {
+        // Configure CORS with dynamic origins
+        let mut cors = Cors::default()
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+            .allowed_headers(vec![
+                header::AUTHORIZATION,
+                header::CONTENT_TYPE,
+                header::ACCEPT,
+            ])
+            .supports_credentials()
+            .max_age(3600);
+
+        // Add each allowed origin from config
+        for origin in &cors_origins {
+            cors = cors.allowed_origin(origin);
+        }
+
         App::new()
+            .wrap(cors)
             .wrap(Logger::default())
             .app_data(user_service.clone())
             .configure(routes::configure_routes)
