@@ -17,7 +17,18 @@ use crate::models::{
 };
 use crate::services::UserService;
 
-/// POST /api/auth/register
+/// Register a new user account
+#[utoipa::path(
+    post,
+    path = "/api/auth/register",
+    tag = "Authentication",
+    request_body = RegisterRequest,
+    responses(
+        (status = 201, description = "User registered successfully", body = UserResponse),
+        (status = 400, description = "Validation error", body = crate::models::ErrorResponse),
+        (status = 409, description = "Email or username already exists", body = crate::models::ErrorResponse)
+    )
+)]
 pub async fn register(
     user_service: web::Data<UserService>,
     body: web::Json<RegisterRequest>,
@@ -44,7 +55,18 @@ pub async fn register(
     )))
 }
 
-/// POST /api/auth/login
+/// Authenticate a user and get a JWT token
+#[utoipa::path(
+    post,
+    path = "/api/auth/login",
+    tag = "Authentication",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = AuthResponse),
+        (status = 400, description = "Validation error", body = crate::models::ErrorResponse),
+        (status = 401, description = "Invalid credentials", body = crate::models::ErrorResponse)
+    )
+)]
 pub async fn login(
     user_service: web::Data<UserService>,
     body: web::Json<LoginRequest>,
@@ -72,15 +94,44 @@ pub async fn login(
     }))
 }
 
-/// POST /api/auth/logout
+/// Logout the current user
+#[utoipa::path(
+    post,
+    path = "/api/auth/logout",
+    tag = "Authentication",
+    responses(
+        (status = 200, description = "Logout successful")
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn logout() -> Result<HttpResponse, ApiError> {
     // For JWT-based auth, logout is typically handled client-side by removing the token
     // Server-side, you might want to implement a token blacklist for additional security
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::message("Logout successful")))
 }
 
-/// GET /api/users
-/// Supports pagination, optional filters (role, is_active), and search query
+/// List all users with pagination and optional filters
+#[utoipa::path(
+    get,
+    path = "/api/users",
+    tag = "Users",
+    params(
+        ("page" = Option<u64>, Query, description = "Page number (default: 1)"),
+        ("per_page" = Option<u64>, Query, description = "Items per page (default: 10, max: 100)"),
+        ("role" = Option<String>, Query, description = "Filter by role: 'admin' or 'user'"),
+        ("is_active" = Option<bool>, Query, description = "Filter by active status"),
+        ("search" = Option<String>, Query, description = "Search by username, email, or name")
+    ),
+    responses(
+        (status = 200, description = "List of users", body = crate::models::PaginatedResponse<crate::models::UserResponse>),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn get_users(
     user_service: web::Data<UserService>,
     query: web::Query<UserListQuery>,
@@ -109,7 +160,23 @@ pub async fn get_users(
     }))
 }
 
-/// GET /api/users/{id}
+/// Get a specific user by ID
+#[utoipa::path(
+    get,
+    path = "/api/users/{id}",
+    tag = "Users",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    responses(
+        (status = 200, description = "User found", body = UserResponse),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse),
+        (status = 404, description = "User not found", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn get_user(
     user_service: web::Data<UserService>,
     path: web::Path<String>,
@@ -130,7 +197,20 @@ pub async fn get_user(
     Ok(HttpResponse::Ok().json(ApiResponse::success("User found", user_response)))
 }
 
-/// GET /api/users/me - Get current authenticated user
+/// Get the currently authenticated user's profile
+#[utoipa::path(
+    get,
+    path = "/api/users/me",
+    tag = "Users",
+    responses(
+        (status = 200, description = "Current user profile", body = UserResponse),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse),
+        (status = 404, description = "User not found", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn get_current_user(
     user_service: web::Data<UserService>,
     req: HttpRequest,
@@ -158,8 +238,27 @@ pub async fn get_current_user(
     )))
 }
 
-/// PUT /api/users/{id} - Update user profile
-/// Admins can update any user, regular users can only update themselves
+/// Update a user's profile
+///
+/// Admins can update any user, regular users can only update themselves.
+#[utoipa::path(
+    put,
+    path = "/api/users/{id}",
+    tag = "Users",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    request_body = UpdateUserRequest,
+    responses(
+        (status = 200, description = "User updated", body = UserResponse),
+        (status = 400, description = "Validation error", body = crate::models::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse),
+        (status = 404, description = "User not found", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn update_user(
     user_service: web::Data<UserService>,
     path: web::Path<String>,
@@ -217,8 +316,25 @@ pub async fn update_user(
     )))
 }
 
-/// DELETE /api/users/{id} - Delete user account
-/// Admins can delete any user, regular users can only delete themselves
+/// Delete a user account
+///
+/// Admins can delete any user, regular users can only delete themselves.
+#[utoipa::path(
+    delete,
+    path = "/api/users/{id}",
+    tag = "Users",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    responses(
+        (status = 200, description = "User deleted successfully"),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse),
+        (status = 404, description = "User not found", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn delete_user(
     user_service: web::Data<UserService>,
     path: web::Path<String>,
@@ -257,10 +373,26 @@ pub async fn delete_user(
     )))
 }
 
-/// PATCH /api/users/{id}/password - Change user password
-/// Note: Password changes require current password verification, so even admins
-/// can only change their own password. For admin password resets, use a separate
-/// admin reset endpoint (not implemented - would send reset email).
+/// Change a user's password
+///
+/// Users can only change their own password by providing their current password.
+#[utoipa::path(
+    patch,
+    path = "/api/users/{id}/password",
+    tag = "Users",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Password changed successfully"),
+        (status = 400, description = "Validation error or wrong current password", body = crate::models::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn change_password(
     user_service: web::Data<UserService>,
     path: web::Path<String>,
@@ -310,8 +442,27 @@ pub async fn change_password(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::message("Password changed successfully")))
 }
 
-/// PATCH /api/users/{id}/role - Update user role (admin only)
-/// Only admins can promote or demote users
+/// Update a user's role (admin only)
+///
+/// Only admins can promote or demote users. Admins cannot demote themselves.
+#[utoipa::path(
+    patch,
+    path = "/api/users/{id}/role",
+    tag = "Users",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    request_body = UpdateRoleRequest,
+    responses(
+        (status = 200, description = "Role updated successfully", body = UserResponse),
+        (status = 400, description = "Validation error", body = crate::models::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse),
+        (status = 404, description = "User not found", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn update_role(
     user_service: web::Data<UserService>,
     path: web::Path<String>,
@@ -390,7 +541,27 @@ pub struct UserListQuery {
     pub search: Option<String>,
 }
 
-/// PATCH /api/users/{id}/status - Update user active status (admin only)
+/// Update a user's active status (admin only)
+///
+/// Activate or deactivate a user account. Admins cannot deactivate themselves.
+#[utoipa::path(
+    patch,
+    path = "/api/users/{id}/status",
+    tag = "Users",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    request_body = UpdateStatusRequest,
+    responses(
+        (status = 200, description = "Status updated successfully", body = UserResponse),
+        (status = 400, description = "Cannot deactivate yourself", body = crate::models::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse),
+        (status = 404, description = "User not found", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn update_status(
     user_service: web::Data<UserService>,
     path: web::Path<String>,
@@ -448,7 +619,21 @@ pub async fn update_status(
     )))
 }
 
-/// GET /api/admin/stats - Get user statistics (admin only)
+/// Get user statistics (admin only)
+///
+/// Returns aggregate statistics about users in the system.
+#[utoipa::path(
+    get,
+    path = "/api/admin/stats",
+    tag = "Admin",
+    responses(
+        (status = 200, description = "User statistics", body = UserStats),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn get_user_stats(
     user_service: web::Data<UserService>,
     req: HttpRequest,
@@ -477,8 +662,23 @@ pub async fn get_user_stats(
     Ok(HttpResponse::Ok().json(ApiResponse::success("User statistics", stats)))
 }
 
-/// PATCH /api/admin/users/bulk-status - Bulk update user status (admin only)
-/// Activate or deactivate multiple users at once
+/// Bulk update user status (admin only)
+///
+/// Activate or deactivate multiple users at once. Maximum 100 users per request.
+#[utoipa::path(
+    patch,
+    path = "/api/admin/users/bulk-status",
+    tag = "Admin",
+    request_body = BulkUpdateStatusRequest,
+    responses(
+        (status = 200, description = "Bulk update completed", body = crate::models::BulkUpdateResponse),
+        (status = 400, description = "Invalid request", body = crate::models::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn bulk_update_status(
     user_service: web::Data<UserService>,
     body: web::Json<BulkUpdateStatusRequest>,
@@ -537,8 +737,28 @@ pub async fn bulk_update_status(
     Ok(HttpResponse::Ok().json(ApiResponse::success(&message, response)))
 }
 
-/// POST /api/users/{id}/avatar - Upload user avatar
-/// Users can upload their own avatar, admins can upload for any user
+/// Upload a user's avatar image
+///
+/// Users can upload their own avatar, admins can upload for any user.
+/// Accepts JPEG, PNG, GIF, and WebP images. Maximum file size is 5MB.
+#[utoipa::path(
+    post,
+    path = "/api/users/{id}/avatar",
+    tag = "Users",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    request_body(content_type = "multipart/form-data", description = "Avatar image file"),
+    responses(
+        (status = 200, description = "Avatar uploaded successfully", body = UserResponse),
+        (status = 400, description = "Invalid file type or size", body = crate::models::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse),
+        (status = 404, description = "User not found", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn upload_avatar(
     user_service: web::Data<UserService>,
     path: web::Path<String>,
@@ -671,8 +891,25 @@ pub async fn upload_avatar(
     )))
 }
 
-/// DELETE /api/users/{id}/avatar - Delete user avatar
-/// Users can delete their own avatar, admins can delete for any user
+/// Delete a user's avatar image
+///
+/// Users can delete their own avatar, admins can delete for any user.
+#[utoipa::path(
+    delete,
+    path = "/api/users/{id}/avatar",
+    tag = "Users",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    responses(
+        (status = 200, description = "Avatar deleted successfully", body = UserResponse),
+        (status = 401, description = "Unauthorized", body = crate::models::ErrorResponse),
+        (status = 404, description = "User not found", body = crate::models::ErrorResponse)
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn delete_avatar(
     user_service: web::Data<UserService>,
     path: web::Path<String>,

@@ -2,10 +2,11 @@ use chrono::{DateTime, Utc};
 use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use utoipa::ToSchema;
 use validator::Validate;
 
 /// User roles for role-based access control
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Admin,
@@ -83,71 +84,106 @@ pub struct User {
 }
 
 /// Request payload for user registration
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct RegisterRequest {
+    /// User's email address
     #[validate(email(message = "Invalid email format"))]
+    #[schema(example = "user@example.com")]
     pub email: String,
+    /// Unique username (3-50 characters)
     #[validate(length(
         min = 3,
         max = 50,
         message = "Username must be between 3 and 50 characters"
     ))]
+    #[schema(example = "johndoe")]
     pub username: String,
+    /// Password (minimum 8 characters)
     #[validate(length(min = 8, message = "Password must be at least 8 characters"))]
+    #[schema(example = "securePassword123")]
     pub password: String,
 }
 
 /// Request payload for user login
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct LoginRequest {
+    /// User's email address
     #[validate(email(message = "Invalid email format"))]
+    #[schema(example = "user@example.com")]
     pub email: String,
+    /// User's password
     #[validate(length(min = 1, message = "Password is required"))]
+    #[schema(example = "securePassword123")]
     pub password: String,
 }
 
 /// Request payload for updating user profile
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct UpdateUserRequest {
+    /// New email address
     #[validate(email(message = "Invalid email format"))]
+    #[schema(example = "newemail@example.com")]
     pub email: Option<String>,
+    /// New username (3-50 characters)
     #[validate(length(
         min = 3,
         max = 50,
         message = "Username must be between 3 and 50 characters"
     ))]
+    #[schema(example = "newusername")]
     pub username: Option<String>,
+    /// First name (max 50 characters)
     #[validate(length(max = 50, message = "First name must be at most 50 characters"))]
+    #[schema(example = "John")]
     pub first_name: Option<String>,
+    /// Last name (max 50 characters)
     #[validate(length(max = 50, message = "Last name must be at most 50 characters"))]
+    #[schema(example = "Doe")]
     pub last_name: Option<String>,
+    /// Phone number (max 20 characters)
     #[validate(length(max = 20, message = "Phone must be at most 20 characters"))]
+    #[schema(example = "+1234567890")]
     pub phone: Option<String>,
+    /// User bio (max 500 characters)
     #[validate(length(max = 500, message = "Bio must be at most 500 characters"))]
+    #[schema(example = "Software developer passionate about Rust")]
     pub bio: Option<String>,
+    /// Location (max 100 characters)
     #[validate(length(max = 100, message = "Location must be at most 100 characters"))]
+    #[schema(example = "San Francisco, CA")]
     pub location: Option<String>,
+    /// Personal website URL
     #[validate(url(message = "Website must be a valid URL"))]
+    #[schema(example = "https://example.com")]
     pub website: Option<String>,
     /// Date of birth in YYYY-MM-DD format
+    #[schema(example = "1990-01-15")]
     pub date_of_birth: Option<String>,
 }
 
 /// Request payload for changing password
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct ChangePasswordRequest {
+    /// Current password for verification
     #[validate(length(min = 1, message = "Current password is required"))]
+    #[schema(example = "currentPassword123")]
     pub current_password: String,
+    /// New password (minimum 8 characters)
     #[validate(length(min = 8, message = "New password must be at least 8 characters"))]
+    #[schema(example = "newSecurePassword456")]
     pub new_password: String,
+    /// Confirm new password
     #[validate(length(min = 8, message = "Confirm password must be at least 8 characters"))]
+    #[schema(example = "newSecurePassword456")]
     pub confirm_password: String,
 }
 
 /// Request payload for updating user role (admin only)
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct UpdateRoleRequest {
+    /// New role: 'admin' or 'user'
     #[validate(custom(function = "validate_role"))]
+    #[schema(example = "admin")]
     pub role: String,
 }
 
@@ -164,73 +200,102 @@ fn validate_role(role: &str) -> Result<(), validator::ValidationError> {
 }
 
 /// Request payload for updating user active status (admin only)
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateStatusRequest {
+    /// Whether the user should be active
+    #[schema(example = true)]
     pub is_active: bool,
 }
 
 /// Request payload for bulk updating user status (admin only)
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct BulkUpdateStatusRequest {
     /// List of user IDs to update
+    #[schema(example = json!(["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]))]
     pub user_ids: Vec<String>,
     /// New status to set for all users
+    #[schema(example = false)]
     pub is_active: bool,
 }
 
 /// Result of a single user update in bulk operation
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BulkUpdateResult {
+    /// User ID that was updated
     pub user_id: String,
+    /// Whether the update was successful
     pub success: bool,
+    /// Status message
     pub message: String,
 }
 
 /// Response for bulk update operations
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BulkUpdateResponse {
+    /// Total number of users requested to update
     pub total_requested: usize,
+    /// Number of successful updates
     pub successful: usize,
+    /// Number of failed updates
     pub failed: usize,
+    /// Detailed results for each user
     pub results: Vec<BulkUpdateResult>,
 }
 
 /// User statistics response (admin only)
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct UserStats {
+    /// Total number of users in the system
     pub total_users: u64,
+    /// Number of active users
     pub active_users: u64,
+    /// Number of inactive users
     pub inactive_users: u64,
+    /// Number of admin users
     pub admin_users: u64,
+    /// Number of regular users
     pub regular_users: u64,
 }
 
 /// Response for successful authentication
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AuthResponse {
+    /// Whether the request was successful
     pub success: bool,
+    /// Response message
     pub message: String,
+    /// JWT token for authentication
+    #[schema(example = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")]
     pub token: String,
+    /// User information
     pub user: UserResponse,
 }
 
 /// User profile data returned in API responses
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, ToSchema)]
 pub struct UserProfileResponse {
+    /// User's first name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub first_name: Option<String>,
+    /// User's last name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_name: Option<String>,
+    /// URL to user's avatar image
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
+    /// User's phone number
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phone: Option<String>,
+    /// User's bio/description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bio: Option<String>,
+    /// User's location
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    /// User's personal website
     #[serde(skip_serializing_if = "Option::is_none")]
     pub website: Option<String>,
+    /// User's date of birth
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_of_birth: Option<String>,
 }
@@ -251,15 +316,27 @@ impl From<UserProfile> for UserProfileResponse {
 }
 
 /// User data returned in API responses (without sensitive fields)
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct UserResponse {
+    /// User's unique identifier
+    #[schema(example = "507f1f77bcf86cd799439011")]
     pub id: String,
+    /// User's email address
+    #[schema(example = "user@example.com")]
     pub email: String,
+    /// User's username
+    #[schema(example = "johndoe")]
     pub username: String,
+    /// User's role
     pub role: Role,
+    /// Whether the user is active
+    #[schema(example = true)]
     pub is_active: bool,
+    /// User's profile information
     pub profile: UserProfileResponse,
+    /// When the user was created
     pub created_at: DateTime<Utc>,
+    /// When the user last logged in
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_login: Option<DateTime<Utc>>,
 }
@@ -337,12 +414,44 @@ impl Claims {
 }
 
 /// Paginated list response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
+#[schema(as = PaginatedUserResponse)]
 pub struct PaginatedResponse<T: Serialize> {
+    /// Whether the request was successful
     pub success: bool,
+    /// List of items
     pub data: Vec<T>,
+    /// Total number of items
     pub total: u64,
+    /// Current page number
     pub page: u64,
+    /// Items per page
     pub per_page: u64,
+    /// Total number of pages
     pub total_pages: u64,
+}
+
+/// Error response structure
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ErrorResponse {
+    /// Whether the request was successful (always false for errors)
+    #[schema(example = false)]
+    pub success: bool,
+    /// Error message
+    #[schema(example = "An error occurred")]
+    pub message: String,
+    /// Detailed validation errors (if any)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub errors: Option<Vec<String>>,
+}
+
+/// Health check response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct HealthResponse {
+    /// Health status
+    #[schema(example = "OK")]
+    pub status: String,
+    /// Status message
+    #[schema(example = "Server is running")]
+    pub message: String,
 }

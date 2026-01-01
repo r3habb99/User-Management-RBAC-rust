@@ -55,7 +55,16 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     );
 }
 
-async fn health_check() -> actix_web::HttpResponse {
+/// Health check endpoint
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    tag = "Health",
+    responses(
+        (status = 200, description = "Server is healthy", body = crate::models::HealthResponse)
+    )
+)]
+pub async fn health_check() -> actix_web::HttpResponse {
     actix_web::HttpResponse::Ok().json(serde_json::json!({
         "status": "OK",
         "message": "Server is running"

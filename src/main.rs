@@ -3,6 +3,7 @@ mod errors;
 mod handlers;
 mod middleware;
 mod models;
+mod openapi;
 mod routes;
 mod services;
 
@@ -10,8 +11,11 @@ use actix_files::Files;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use log::info;
 use mongodb::Client;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::config::CONFIG;
+use crate::openapi::ApiDoc;
 use crate::services::UserService;
 
 #[actix_web::main]
@@ -51,11 +55,20 @@ async fn main() -> std::io::Result<()> {
     let server_addr = format!("{}:{}", CONFIG.server_host, CONFIG.server_port);
     info!("Starting server at http://{}", server_addr);
 
+    // Generate OpenAPI spec
+    let openapi = ApiDoc::openapi();
+
+    info!("Swagger UI available at http://{}/swagger-ui/", server_addr);
+
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
             .app_data(user_service.clone())
             .configure(routes::configure_routes)
+            // Swagger UI
+            .service(
+                SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),
+            )
             // Serve uploaded files
             .service(Files::new("/uploads", &upload_dir_clone).show_files_listing())
     })

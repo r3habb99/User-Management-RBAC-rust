@@ -1,0 +1,47 @@
+# Build artifacts
+target/
+debug/
+*.pdb
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Environment files (sensitive data)
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+!README.md
+
+# Docker files (not needed in build context recursively)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+*.test
+
+# Uploads (don't include existing uploads)
+uploads/
+
+# Task files
+task.txt
+
