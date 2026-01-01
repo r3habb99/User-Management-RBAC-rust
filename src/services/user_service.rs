@@ -11,7 +11,7 @@ use crate::config::CONFIG;
 use crate::errors::ApiError;
 use crate::models::{
     ChangePasswordRequest, Claims, LoginRequest, RegisterRequest, Role, UpdateUserRequest, User,
-    UserResponse,
+    UserResponse, UserStats,
 };
 
 pub struct UserService {
@@ -97,14 +97,32 @@ impl UserService {
         &self,
         page: u64,
         per_page: u64,
+        role_filter: Option<&str>,
+        active_filter: Option<bool>,
     ) -> Result<(Vec<UserResponse>, u64), ApiError> {
-        let total = self.collection.count_documents(None, None).await?;
+        // Build filter document
+        let mut filter = doc! {};
+
+        if let Some(role) = role_filter {
+            filter.insert("role", role.to_lowercase());
+        }
+
+        if let Some(is_active) = active_filter {
+            filter.insert("is_active", is_active);
+        }
+
+        debug!("Fetching users with filter: {:?}", filter);
+
+        let total = self
+            .collection
+            .count_documents(filter.clone(), None)
+            .await?;
         let skip = (page - 1) * per_page;
 
         let cursor = self
             .collection
             .find(
-                None,
+                filter,
                 mongodb::options::FindOptions::builder()
                     .skip(skip)
                     .limit(per_page as i64)
@@ -372,6 +390,109 @@ impl UserService {
             .ok_or_else(|| {
                 ApiError::InternalServerError("Failed to fetch updated user".to_string())
             })
+    }
+
+    /// Update user active status (admin only operation)
+    pub async fn update_status(&self, user_id: &str, is_active: bool) -> Result<User, ApiError> {
+        info!(
+            "Updating active status for user_id: {} to: {}",
+            user_id, is_active
+        );
+
+        let object_id = ObjectId::parse_str(user_id)
+            .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
+
+        // Fetch existing user
+        let existing_user = self
+            .collection
+            .find_one(doc! { "_id": object_id }, None)
+            .await?
+            .ok_or_else(|| {
+                warn!("Status update failed: User not found with id: {}", user_id);
+                ApiError::NotFound("User not found".to_string())
+            })?;
+
+        // Check if status is actually changing
+        if existing_user.is_active == is_active {
+            debug!(
+                "No status change needed for user {}: already {}",
+                user_id,
+                if is_active { "active" } else { "inactive" }
+            );
+            return Ok(existing_user);
+        }
+
+        // Update the status
+        self.collection
+            .update_one(
+                doc! { "_id": object_id },
+                doc! {
+                    "$set": {
+                        "is_active": is_active,
+                        "updated_at": bson::DateTime::now()
+                    }
+                },
+                None,
+            )
+            .await?;
+
+        info!(
+            "Successfully {} user {}",
+            if is_active {
+                "activated"
+            } else {
+                "deactivated"
+            },
+            user_id
+        );
+
+        // Fetch and return updated user
+        self.collection
+            .find_one(doc! { "_id": object_id }, None)
+            .await?
+            .ok_or_else(|| {
+                ApiError::InternalServerError("Failed to fetch updated user".to_string())
+            })
+    }
+
+    /// Get user statistics (admin only)
+    pub async fn get_stats(&self) -> Result<UserStats, ApiError> {
+        info!("Fetching user statistics");
+
+        let total_users = self.collection.count_documents(doc! {}, None).await?;
+
+        let active_users = self
+            .collection
+            .count_documents(doc! { "is_active": true }, None)
+            .await?;
+
+        let inactive_users = self
+            .collection
+            .count_documents(doc! { "is_active": false }, None)
+            .await?;
+
+        let admin_users = self
+            .collection
+            .count_documents(doc! { "role": "admin" }, None)
+            .await?;
+
+        let regular_users = self
+            .collection
+            .count_documents(doc! { "role": "user" }, None)
+            .await?;
+
+        debug!(
+            "User stats: total={}, active={}, inactive={}, admins={}, regular={}",
+            total_users, active_users, inactive_users, admin_users, regular_users
+        );
+
+        Ok(UserStats {
+            total_users,
+            active_users,
+            inactive_users,
+            admin_users,
+            regular_users,
+        })
     }
 
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, ApiError> {

@@ -126,6 +126,22 @@ fn validate_role(role: &str) -> Result<(), validator::ValidationError> {
     }
 }
 
+/// Request payload for updating user active status (admin only)
+#[derive(Debug, Deserialize)]
+pub struct UpdateStatusRequest {
+    pub is_active: bool,
+}
+
+/// User statistics response (admin only)
+#[derive(Debug, Serialize)]
+pub struct UserStats {
+    pub total_users: u64,
+    pub active_users: u64,
+    pub inactive_users: u64,
+    pub admin_users: u64,
+    pub regular_users: u64,
+}
+
 /// Response for successful authentication
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {

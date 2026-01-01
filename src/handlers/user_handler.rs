@@ -6,7 +6,8 @@ use crate::errors::ApiError;
 use crate::middleware::RequestExt;
 use crate::models::{
     ApiResponse, AuthResponse, ChangePasswordRequest, LoginRequest, PaginatedResponse,
-    RegisterRequest, UpdateRoleRequest, UpdateUserRequest, UserResponse,
+    RegisterRequest, UpdateRoleRequest, UpdateStatusRequest, UpdateUserRequest, UserResponse,
+    UserStats,
 };
 use crate::services::UserService;
 
@@ -73,14 +74,17 @@ pub async fn logout() -> Result<HttpResponse, ApiError> {
 }
 
 /// GET /api/users
+/// Supports pagination and optional filters: role (admin/user), is_active (true/false)
 pub async fn get_users(
     user_service: web::Data<UserService>,
-    query: web::Query<PaginationQuery>,
+    query: web::Query<UserListQuery>,
 ) -> Result<HttpResponse, ApiError> {
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(10).min(100);
 
-    let (users, total) = user_service.get_all_users(page, per_page).await?;
+    let (users, total) = user_service
+        .get_all_users(page, per_page, query.role.as_deref(), query.is_active)
+        .await?;
     let total_pages = (total as f64 / per_page as f64).ceil() as u64;
 
     Ok(HttpResponse::Ok().json(PaginatedResponse {
@@ -361,8 +365,100 @@ pub async fn update_role(
     )))
 }
 
+/// Query parameters for listing users with pagination and filters
 #[derive(Debug, serde::Deserialize)]
-pub struct PaginationQuery {
+pub struct UserListQuery {
     pub page: Option<u64>,
     pub per_page: Option<u64>,
+    /// Filter by role: "admin" or "user"
+    pub role: Option<String>,
+    /// Filter by active status: true or false
+    pub is_active: Option<bool>,
+}
+
+/// PATCH /api/users/{id}/status - Update user active status (admin only)
+pub async fn update_status(
+    user_service: web::Data<UserService>,
+    path: web::Path<String>,
+    body: web::Json<UpdateStatusRequest>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ApiError> {
+    let user_id = path.into_inner();
+
+    // Get current user from JWT claims
+    let claims = req.get_claims().ok_or_else(|| {
+        warn!("Failed to get claims from request for status update");
+        ApiError::Unauthorized("Authentication required".to_string())
+    })?;
+
+    // Only admins can update user status
+    if !claims.is_admin() {
+        warn!(
+            "Non-admin user {} attempted to update status of user {}",
+            claims.sub, user_id
+        );
+        return Err(ApiError::Unauthorized(
+            "Only administrators can update user status".to_string(),
+        ));
+    }
+
+    // Prevent admin from deactivating themselves
+    if claims.sub == user_id && !body.is_active {
+        warn!("Admin {} attempted to deactivate themselves", claims.sub);
+        return Err(ApiError::BadRequest(
+            "Administrators cannot deactivate themselves".to_string(),
+        ));
+    }
+
+    info!(
+        "Admin {} {} user {}",
+        claims.sub,
+        if body.is_active {
+            "activating"
+        } else {
+            "deactivating"
+        },
+        user_id
+    );
+
+    let updated_user = user_service.update_status(&user_id, body.is_active).await?;
+    let user_response: UserResponse = updated_user.into();
+
+    Ok(HttpResponse::Ok().json(ApiResponse::success(
+        if body.is_active {
+            "User activated successfully"
+        } else {
+            "User deactivated successfully"
+        },
+        user_response,
+    )))
+}
+
+/// GET /api/admin/stats - Get user statistics (admin only)
+pub async fn get_user_stats(
+    user_service: web::Data<UserService>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ApiError> {
+    // Get current user from JWT claims
+    let claims = req.get_claims().ok_or_else(|| {
+        warn!("Failed to get claims from request for stats");
+        ApiError::Unauthorized("Authentication required".to_string())
+    })?;
+
+    // Only admins can view statistics
+    if !claims.is_admin() {
+        warn!(
+            "Non-admin user {} attempted to access user statistics",
+            claims.sub
+        );
+        return Err(ApiError::Unauthorized(
+            "Only administrators can view user statistics".to_string(),
+        ));
+    }
+
+    info!("Admin {} fetching user statistics", claims.sub);
+
+    let stats: UserStats = user_service.get_stats().await?;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::success("User statistics", stats)))
 }
