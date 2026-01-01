@@ -9,15 +9,29 @@ use jsonwebtoken::{decode, DecodingKey, Validation};
 use std::rc::Rc;
 
 use crate::config::CONFIG;
-use crate::constants::{CODE_INVALID_TOKEN, ERR_INVALID_AUTH_HEADER, ERR_INVALID_TOKEN};
+use crate::constants::{
+    CODE_INVALID_TOKEN, CODE_TOKEN_REVOKED, ERR_INVALID_AUTH_HEADER, ERR_INVALID_TOKEN,
+    ERR_TOKEN_REVOKED,
+};
 use crate::errors::ApiError;
 use crate::models::Claims;
+use crate::services::TokenBlacklist;
 
 /// JWT Authentication middleware.
 ///
-/// This middleware validates JWT tokens from the Authorization header
-/// and adds the decoded claims to the request extensions.
-pub struct AuthMiddleware;
+/// This middleware validates JWT tokens from the Authorization header,
+/// checks if the token has been blacklisted (logged out), and adds
+/// the decoded claims to the request extensions.
+pub struct AuthMiddleware {
+    blacklist: TokenBlacklist,
+}
+
+impl AuthMiddleware {
+    /// Create a new AuthMiddleware with the given token blacklist.
+    pub fn new(blacklist: TokenBlacklist) -> Self {
+        Self { blacklist }
+    }
+}
 
 impl<S, B> Transform<S, ServiceRequest> for AuthMiddleware
 where
@@ -34,12 +48,14 @@ where
     fn new_transform(&self, service: S) -> Self::Future {
         ok(AuthMiddlewareService {
             service: Rc::new(service),
+            blacklist: self.blacklist.clone(),
         })
     }
 }
 
 pub struct AuthMiddlewareService<S> {
     service: Rc<S>,
+    blacklist: TokenBlacklist,
 }
 
 impl<S, B> Service<ServiceRequest> for AuthMiddlewareService<S>
@@ -56,6 +72,7 @@ where
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let service = Rc::clone(&self.service);
+        let blacklist = self.blacklist.clone();
 
         Box::pin(async move {
             // Extract Authorization header
@@ -75,6 +92,15 @@ where
                 }
             };
 
+            // Check if token is blacklisted (logged out)
+            if blacklist.is_blacklisted(token) {
+                return Err(ApiError::Unauthorized {
+                    code: CODE_TOKEN_REVOKED.to_string(),
+                    message: ERR_TOKEN_REVOKED.to_string(),
+                }
+                .into());
+            }
+
             // Validate JWT token
             let token_data = decode::<Claims>(
                 token,
@@ -85,6 +111,9 @@ where
                 code: CODE_INVALID_TOKEN.to_string(),
                 message: ERR_INVALID_TOKEN.to_string(),
             })?;
+
+            // Store the raw token in extensions for potential logout
+            req.extensions_mut().insert(token.to_string());
 
             // Add claims to request extensions for use in handlers
             req.extensions_mut().insert(token_data.claims);

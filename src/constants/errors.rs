@@ -4,6 +4,7 @@
 pub const ERR_AUTH_REQUIRED: &str = "Authentication required";
 pub const ERR_INVALID_AUTH_HEADER: &str = "Missing or invalid authorization header";
 pub const ERR_INVALID_TOKEN: &str = "Invalid or expired token";
+pub const ERR_TOKEN_REVOKED: &str = "Token has been revoked";
 
 // User errors
 pub const ERR_USER_NOT_FOUND: &str = "User not found";

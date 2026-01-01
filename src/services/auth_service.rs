@@ -15,6 +15,7 @@ use crate::constants::{
 use crate::errors::ApiError;
 use crate::models::{Claims, LoginRequest, User};
 use crate::repositories::UserRepository;
+use crate::utils::mask_email;
 
 /// Service for authentication operations.
 pub struct AuthService {
@@ -97,7 +98,8 @@ pub fn generate_token(user: &User) -> Result<String, ApiError> {
 
     debug!(
         "Generated token for user {} with role {}",
-        user.email, user.role
+        mask_email(&user.email),
+        user.role
     );
 
     let token = encode(

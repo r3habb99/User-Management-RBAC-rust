@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use log::{debug, info, warn};
 
+use crate::utils::{mask_email, mask_username};
+
 use crate::config::CONFIG;
 use crate::constants::{
     CODE_EMAIL_EXISTS, CODE_INTERNAL_ERROR, CODE_INVALID_USER_ID, CODE_USERNAME_EXISTS,
@@ -193,7 +195,7 @@ impl UserService {
                     if other_user.id != existing_user.id {
                         warn!(
                             "Update failed: Email {} already taken by another user",
-                            normalized_email
+                            mask_email(&normalized_email)
                         );
                         return Err(ApiError::Conflict {
                             code: CODE_EMAIL_EXISTS.to_string(),
@@ -214,7 +216,7 @@ impl UserService {
                     if other_user.id != existing_user.id {
                         warn!(
                             "Update failed: Username {} already taken by another user",
-                            new_username
+                            mask_username(new_username)
                         );
                         return Err(ApiError::Conflict {
                             code: CODE_USERNAME_EXISTS.to_string(),
@@ -598,7 +600,7 @@ impl UserService {
         {
             warn!(
                 "User with email {} already exists but is not an admin",
-                CONFIG.admin_email
+                mask_email(&CONFIG.admin_email)
             );
             return Ok(());
         }
@@ -611,7 +613,7 @@ impl UserService {
         {
             warn!(
                 "User with username {} already exists but is not an admin",
-                CONFIG.admin_username
+                mask_username(&CONFIG.admin_username)
             );
             return Ok(());
         }
@@ -641,7 +643,8 @@ impl UserService {
 
         info!(
             "✅ Admin user created successfully: {} ({})",
-            CONFIG.admin_username, CONFIG.admin_email
+            mask_username(&CONFIG.admin_username),
+            mask_email(&CONFIG.admin_email)
         );
         info!("⚠️  Please change the default admin password after first login!");
 

@@ -1,24 +1,36 @@
+use actix_governor::Governor;
 use actix_web::web;
 
 use crate::handlers;
-use crate::middleware::AuthMiddleware;
+use crate::middleware::{create_auth_rate_limiter_config, AuthMiddleware};
+use crate::services::TokenBlacklist;
 
-pub fn configure_routes(cfg: &mut web::ServiceConfig) {
+pub fn configure_routes(cfg: &mut web::ServiceConfig, token_blacklist: TokenBlacklist) {
+    // Create rate limiter configuration for auth endpoints
+    let auth_rate_limiter_config = create_auth_rate_limiter_config();
+
     cfg.service(
         web::scope("/api")
             // Health check
             .route("/health", web::get().to(health_check))
-            // Auth routes (public)
+            // Auth routes (public, rate-limited)
             .service(
                 web::scope("/auth")
+                    .wrap(Governor::new(&auth_rate_limiter_config))
                     .route("/register", web::post().to(handlers::register))
                     .route("/login", web::post().to(handlers::login))
-                    .route("/logout", web::post().to(handlers::logout)),
+                    // Logout is protected - requires valid token to blacklist it
+                    .route(
+                        "/logout",
+                        web::post()
+                            .to(handlers::logout)
+                            .wrap(AuthMiddleware::new(token_blacklist.clone())),
+                    ),
             )
             // User routes (protected)
             .service(
                 web::scope("/users")
-                    .wrap(AuthMiddleware)
+                    .wrap(AuthMiddleware::new(token_blacklist.clone()))
                     // Get current authenticated user - must be before /{id} to avoid conflict
                     .route("/me", web::get().to(handlers::get_current_user))
                     // List all users with pagination, filters, and search
@@ -43,7 +55,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             // Admin routes (protected, admin only)
             .service(
                 web::scope("/admin")
-                    .wrap(AuthMiddleware)
+                    .wrap(AuthMiddleware::new(token_blacklist.clone()))
                     // Get user statistics
                     .route("/stats", web::get().to(handlers::get_user_stats))
                     // Bulk update user status

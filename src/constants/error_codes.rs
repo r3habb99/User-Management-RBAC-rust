@@ -4,8 +4,10 @@
 //! making it easier for API clients to handle errors programmatically.
 
 // Validation errors
+#[allow(dead_code)]
 pub const CODE_VALIDATION_FAILED: &str = "VALIDATION_FAILED";
 pub const CODE_VALIDATION_ERROR: &str = "VALIDATION_ERROR";
+#[allow(dead_code)]
 pub const CODE_INVALID_FORMAT: &str = "INVALID_FORMAT";
 
 // Bulk operation errors
@@ -15,6 +17,7 @@ pub const CODE_BULK_LIMIT_EXCEEDED: &str = "BULK_LIMIT_EXCEEDED";
 // Authentication errors
 pub const CODE_AUTH_REQUIRED: &str = "AUTH_REQUIRED";
 pub const CODE_INVALID_TOKEN: &str = "INVALID_TOKEN";
+pub const CODE_TOKEN_REVOKED: &str = "TOKEN_REVOKED";
 pub const CODE_INVALID_CREDENTIALS: &str = "INVALID_CREDENTIALS";
 pub const CODE_ACCOUNT_DEACTIVATED: &str = "ACCOUNT_DEACTIVATED";
 
@@ -41,6 +44,8 @@ pub const CODE_FILE_UPLOAD_FAILED: &str = "FILE_UPLOAD_FAILED";
 
 // Generic errors
 pub const CODE_BAD_REQUEST: &str = "BAD_REQUEST";
+#[allow(dead_code)]
 pub const CODE_NOT_FOUND: &str = "NOT_FOUND";
+#[allow(dead_code)]
 pub const CODE_CONFLICT: &str = "CONFLICT";
 pub const CODE_INTERNAL_ERROR: &str = "INTERNAL_ERROR";

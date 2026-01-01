@@ -8,6 +8,7 @@ mod openapi;
 mod repositories;
 mod routes;
 mod services;
+mod utils;
 mod validators;
 
 use actix_cors::Cors;
@@ -21,7 +22,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::config::CONFIG;
 use crate::openapi::ApiDoc;
 use crate::repositories::UserRepository;
-use crate::services::{AuthService, AvatarService, FileService, UserService};
+use crate::services::{AuthService, AvatarService, FileService, TokenBlacklist, UserService};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -72,6 +73,10 @@ async fn main() -> std::io::Result<()> {
     let avatar_service = web::Data::new(avatar_service);
     let file_service = web::Data::new(file_service);
 
+    // Create token blacklist for logout functionality
+    let token_blacklist = TokenBlacklist::new();
+    let token_blacklist_data = web::Data::new(token_blacklist.clone());
+
     // Clone upload_dir for use in HttpServer closure
     let upload_dir_clone = upload_dir.clone();
 
@@ -104,6 +109,9 @@ async fn main() -> std::io::Result<()> {
             cors = cors.allowed_origin(origin);
         }
 
+        // Clone token_blacklist for route configuration
+        let blacklist_for_routes = token_blacklist.clone();
+
         App::new()
             .wrap(cors)
             .wrap(Logger::default())
@@ -111,7 +119,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(auth_service.clone())
             .app_data(avatar_service.clone())
             .app_data(file_service.clone())
-            .configure(routes::configure_routes)
+            .app_data(token_blacklist_data.clone())
+            .configure(|cfg| routes::configure_routes(cfg, blacklist_for_routes))
             // Swagger UI
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),

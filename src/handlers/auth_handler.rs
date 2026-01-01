@@ -1,12 +1,15 @@
 //! Authentication handlers for user registration, login, and logout.
 
-use actix_web::{web, HttpResponse};
+use actix_web::{web, HttpMessage, HttpRequest, HttpResponse};
+use log::info;
 use validator::Validate;
 
 use crate::constants::{MSG_LOGIN_SUCCESS, MSG_LOGOUT_SUCCESS, MSG_USER_REGISTERED};
 use crate::errors::ApiError;
-use crate::models::{ApiResponse, AuthResponse, LoginRequest, RegisterRequest, UserResponse};
-use crate::services::{AuthService, UserService};
+use crate::models::{
+    ApiResponse, AuthResponse, Claims, LoginRequest, RegisterRequest, UserResponse,
+};
+use crate::services::{AuthService, TokenBlacklist, UserService};
 use crate::validators::validation_errors_to_api_error;
 
 /// Register a new user account
@@ -64,19 +67,34 @@ pub async fn login(
 }
 
 /// Logout the current user
+///
+/// This endpoint invalidates the current JWT token by adding it to a server-side
+/// blacklist. The token will remain blacklisted until its natural expiration time.
 #[utoipa::path(
     post,
     path = "/api/auth/logout",
     tag = "Authentication",
     responses(
-        (status = 200, description = "Logout successful")
+        (status = 200, description = "Logout successful"),
+        (status = 401, description = "Invalid or missing token", body = crate::models::ErrorResponse)
     ),
     security(
         ("bearer_auth" = [])
     )
 )]
-pub async fn logout() -> Result<HttpResponse, ApiError> {
-    // For JWT-based auth, logout is typically handled client-side by removing the token
-    // Server-side, you might want to implement a token blacklist for additional security
+pub async fn logout(
+    req: HttpRequest,
+    token_blacklist: web::Data<TokenBlacklist>,
+) -> Result<HttpResponse, ApiError> {
+    // Get the token and claims from request extensions (set by AuthMiddleware)
+    let claims = req.extensions().get::<Claims>().cloned();
+    let token = req.extensions().get::<String>().cloned();
+
+    if let (Some(claims), Some(token)) = (claims, token) {
+        // Add token to blacklist with its expiration time
+        token_blacklist.blacklist_token(&token, claims.exp).await;
+        info!("User {} logged out successfully", claims.sub);
+    }
+
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::message(MSG_LOGOUT_SUCCESS)))
 }

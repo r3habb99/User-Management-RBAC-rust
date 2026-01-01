@@ -11,6 +11,7 @@ use mongodb::{Collection, Database, IndexModel};
 use crate::constants::COLLECTION_USERS;
 use crate::errors::ApiError;
 use crate::models::User;
+use crate::utils::{mask_email, mask_username};
 
 /// Repository for user-related database operations.
 pub struct UserRepository {
@@ -79,7 +80,7 @@ impl UserRepository {
 
     /// Find a user by email address (case-insensitive).
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, ApiError> {
-        debug!("Repository: Finding user by email: {}", email);
+        debug!("Repository: Finding user by email: {}", mask_email(email));
         Ok(self
             .collection
             .find_one(doc! { "email": email.to_lowercase() })
@@ -88,7 +89,10 @@ impl UserRepository {
 
     /// Find a user by username.
     pub async fn find_by_username(&self, username: &str) -> Result<Option<User>, ApiError> {
-        debug!("Repository: Finding user by username: {}", username);
+        debug!(
+            "Repository: Finding user by username: {}",
+            mask_username(username)
+        );
         Ok(self
             .collection
             .find_one(doc! { "username": username })
