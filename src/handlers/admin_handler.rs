@@ -11,6 +11,7 @@ use crate::models::{
     UserStats,
 };
 use crate::services::UserService;
+use crate::validators::{validate_bulk_user_ids, validation_errors_to_api_error};
 
 /// Update a user's role (admin only)
 ///
@@ -68,16 +69,8 @@ pub async fn update_role(
 
     // Validate input
     body.validate().map_err(|e| {
-        let errors: Vec<String> = e
-            .field_errors()
-            .iter()
-            .flat_map(|(_, errs)| {
-                errs.iter()
-                    .map(|e| e.message.clone().unwrap_or_default().to_string())
-            })
-            .collect();
-        warn!("Validation failed for update role: {:?}", errors);
-        ApiError::ValidationError(errors)
+        warn!("Validation failed for update role");
+        validation_errors_to_api_error(e)
     })?;
 
     info!(
@@ -255,21 +248,8 @@ pub async fn bulk_update_status(
         ));
     }
 
-    // Validate that we have at least one user ID
-    if body.user_ids.is_empty() {
-        return Err(ApiError::BadRequest(
-            "At least one user ID is required".to_string(),
-        ));
-    }
-
-    // Limit bulk operations to prevent abuse
-    const MAX_BULK_SIZE: usize = 100;
-    if body.user_ids.len() > MAX_BULK_SIZE {
-        return Err(ApiError::BadRequest(format!(
-            "Maximum {} users can be updated at once",
-            MAX_BULK_SIZE
-        )));
-    }
+    // Validate bulk user IDs
+    validate_bulk_user_ids(&body.user_ids)?;
 
     info!(
         "Admin {} performing bulk {} on {} users",

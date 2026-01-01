@@ -6,6 +6,7 @@ mod models;
 mod openapi;
 mod routes;
 mod services;
+mod validators;
 
 use actix_cors::Cors;
 use actix_files::Files;

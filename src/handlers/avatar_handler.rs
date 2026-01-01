@@ -13,6 +13,9 @@ use crate::errors::ApiError;
 use crate::middleware::RequestExt;
 use crate::models::{ApiResponse, UserResponse};
 use crate::services::AvatarService;
+use crate::validators::{
+    get_extension_from_content_type, validate_avatar_content_type, validate_avatar_size,
+};
 
 /// Upload a user's avatar image
 ///
@@ -84,24 +87,10 @@ pub async fn upload_avatar(
 
         // Validate content type
         let content_type = field.content_type().map(|ct| ct.to_string());
-        let allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-
-        if let Some(ref ct) = content_type {
-            if !allowed_types.iter().any(|t| ct.starts_with(t)) {
-                return Err(ApiError::BadRequest(
-                    "Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.".to_string(),
-                ));
-            }
-        }
+        validate_avatar_content_type(content_type.as_deref())?;
 
         // Generate unique filename
-        let extension = match content_type.as_deref() {
-            Some("image/jpeg") => "jpg",
-            Some("image/png") => "png",
-            Some("image/gif") => "gif",
-            Some("image/webp") => "webp",
-            _ => "jpg",
-        };
+        let extension = get_extension_from_content_type(content_type.as_deref());
         let filename = format!("{}_{}.{}", user_id, Uuid::new_v4(), extension);
 
         // Create upload directory if it doesn't exist
@@ -121,8 +110,7 @@ pub async fn upload_avatar(
             ApiError::InternalServerError("Failed to save file".to_string())
         })?;
 
-        // Write the file content with size limit (5MB)
-        let max_size: usize = 5 * 1024 * 1024;
+        // Write the file content with size limit
         let mut total_size: usize = 0;
 
         while let Some(chunk) = field.next().await {
@@ -132,12 +120,10 @@ pub async fn upload_avatar(
             })?;
 
             total_size += data.len();
-            if total_size > max_size {
+            if let Err(e) = validate_avatar_size(total_size) {
                 // Clean up the partial file
                 let _ = std::fs::remove_file(&filepath);
-                return Err(ApiError::BadRequest(
-                    "File too large. Maximum size is 5MB.".to_string(),
-                ));
+                return Err(e);
             }
 
             file.write_all(&data).map_err(|e| {

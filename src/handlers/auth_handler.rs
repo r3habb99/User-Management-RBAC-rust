@@ -6,6 +6,7 @@ use validator::Validate;
 use crate::errors::ApiError;
 use crate::models::{ApiResponse, AuthResponse, LoginRequest, RegisterRequest, UserResponse};
 use crate::services::{AuthService, UserService};
+use crate::validators::validation_errors_to_api_error;
 
 /// Register a new user account
 #[utoipa::path(
@@ -24,17 +25,7 @@ pub async fn register(
     body: web::Json<RegisterRequest>,
 ) -> Result<HttpResponse, ApiError> {
     // Validate input
-    body.validate().map_err(|e| {
-        let errors: Vec<String> = e
-            .field_errors()
-            .iter()
-            .flat_map(|(_, errs)| {
-                errs.iter()
-                    .map(|e| e.message.clone().unwrap_or_default().to_string())
-            })
-            .collect();
-        ApiError::ValidationError(errors)
-    })?;
+    body.validate().map_err(validation_errors_to_api_error)?;
 
     let user = user_service.register(body.into_inner()).await?;
     let user_response: UserResponse = user.into();
@@ -62,17 +53,7 @@ pub async fn login(
     body: web::Json<LoginRequest>,
 ) -> Result<HttpResponse, ApiError> {
     // Validate input
-    body.validate().map_err(|e| {
-        let errors: Vec<String> = e
-            .field_errors()
-            .iter()
-            .flat_map(|(_, errs)| {
-                errs.iter()
-                    .map(|e| e.message.clone().unwrap_or_default().to_string())
-            })
-            .collect();
-        ApiError::ValidationError(errors)
-    })?;
+    body.validate().map_err(validation_errors_to_api_error)?;
 
     let (user, token) = auth_service.login(body.into_inner()).await?;
 

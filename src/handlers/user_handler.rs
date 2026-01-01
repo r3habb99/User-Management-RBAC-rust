@@ -10,6 +10,7 @@ use crate::models::{
     ApiResponse, ChangePasswordRequest, PaginatedResponse, UpdateUserRequest, UserResponse,
 };
 use crate::services::UserService;
+use crate::validators::validation_errors_to_api_error;
 
 /// List all users with pagination and optional filters
 #[utoipa::path(
@@ -190,16 +191,8 @@ pub async fn update_user(
 
     // Validate input
     body.validate().map_err(|e| {
-        let errors: Vec<String> = e
-            .field_errors()
-            .iter()
-            .flat_map(|(_, errs)| {
-                errs.iter()
-                    .map(|e| e.message.clone().unwrap_or_default().to_string())
-            })
-            .collect();
-        warn!("Validation failed for update user: {:?}", errors);
-        ApiError::ValidationError(errors)
+        warn!("Validation failed for update user");
+        validation_errors_to_api_error(e)
     })?;
 
     info!("Updating user profile for user_id: {}", user_id);
@@ -320,16 +313,8 @@ pub async fn change_password(
 
     // Validate input
     body.validate().map_err(|e| {
-        let errors: Vec<String> = e
-            .field_errors()
-            .iter()
-            .flat_map(|(_, errs)| {
-                errs.iter()
-                    .map(|e| e.message.clone().unwrap_or_default().to_string())
-            })
-            .collect();
-        warn!("Validation failed for change password: {:?}", errors);
-        ApiError::ValidationError(errors)
+        warn!("Validation failed for change password");
+        validation_errors_to_api_error(e)
     })?;
 
     info!("Changing password for user_id: {}", user_id);

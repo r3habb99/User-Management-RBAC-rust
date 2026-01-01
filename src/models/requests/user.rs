@@ -4,6 +4,8 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 use validator::Validate;
 
+use crate::validators::validate_role;
+
 /// Request payload for updating user profile
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct UpdateUserRequest {
@@ -74,18 +76,6 @@ pub struct UpdateRoleRequest {
     pub role: String,
 }
 
-/// Custom validator for role field
-fn validate_role(role: &str) -> Result<(), validator::ValidationError> {
-    match role.to_lowercase().as_str() {
-        "admin" | "user" => Ok(()),
-        _ => {
-            let mut error = validator::ValidationError::new("invalid_role");
-            error.message = Some("Role must be either 'admin' or 'user'".into());
-            Err(error)
-        }
-    }
-}
-
 /// Request payload for updating user active status (admin only)
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateStatusRequest {
@@ -104,4 +94,3 @@ pub struct BulkUpdateStatusRequest {
     #[schema(example = false)]
     pub is_active: bool,
 }
-

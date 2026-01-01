@@ -13,6 +13,7 @@ use crate::models::{
     UpdateUserRequest, User, UserProfile, UserResponse, UserStats,
 };
 use crate::services::auth_service::{hash_password, verify_password};
+use crate::validators::{validate_password_different, validate_password_match};
 
 pub struct UserService {
     collection: Collection<User>,
@@ -278,26 +279,22 @@ impl UserService {
         info!("Changing password for user_id: {}", user_id);
 
         // Validate new password matches confirmation
-        if req.new_password != req.confirm_password {
+        validate_password_match(&req.new_password, &req.confirm_password).inspect_err(|_| {
             warn!(
                 "Password change failed: Passwords do not match for user: {}",
                 user_id
             );
-            return Err(ApiError::BadRequest(
-                "New password and confirmation do not match".to_string(),
-            ));
-        }
+        })?;
 
         // Prevent using the same password
-        if req.current_password == req.new_password {
-            warn!(
-                "Password change failed: New password same as current for user: {}",
-                user_id
-            );
-            return Err(ApiError::BadRequest(
-                "New password must be different from current password".to_string(),
-            ));
-        }
+        validate_password_different(&req.current_password, &req.new_password).inspect_err(
+            |_| {
+                warn!(
+                    "Password change failed: New password same as current for user: {}",
+                    user_id
+                );
+            },
+        )?;
 
         let object_id = ObjectId::parse_str(user_id)
             .map_err(|_| ApiError::BadRequest("Invalid user ID format".to_string()))?;
