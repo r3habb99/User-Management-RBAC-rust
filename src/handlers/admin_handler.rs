@@ -4,6 +4,11 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use log::{info, warn};
 use validator::Validate;
 
+use crate::constants::{
+    ERR_AUTH_REQUIRED, ERR_CANNOT_DEACTIVATE_SELF, ERR_CANNOT_DEMOTE_SELF, ERR_ONLY_ADMINS_BULK,
+    ERR_ONLY_ADMINS_ROLES, ERR_ONLY_ADMINS_STATS, ERR_ONLY_ADMINS_STATUS, MSG_ROLE_UPDATED,
+    MSG_USER_ACTIVATED, MSG_USER_DEACTIVATED, MSG_USER_STATISTICS,
+};
 use crate::errors::ApiError;
 use crate::middleware::RequestExt;
 use crate::models::{
@@ -45,7 +50,7 @@ pub async fn update_role(
     // Get current user from JWT claims
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request for role update");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     // Only admins can update roles
@@ -54,17 +59,13 @@ pub async fn update_role(
             "Non-admin user {} attempted to update role of user {}",
             claims.sub, user_id
         );
-        return Err(ApiError::Unauthorized(
-            "Only administrators can update user roles".to_string(),
-        ));
+        return Err(ApiError::Unauthorized(ERR_ONLY_ADMINS_ROLES.to_string()));
     }
 
     // Prevent admin from demoting themselves
     if claims.sub == user_id && body.role.to_lowercase() != "admin" {
         warn!("Admin {} attempted to demote themselves", claims.sub);
-        return Err(ApiError::BadRequest(
-            "Administrators cannot demote themselves. Ask another admin to do this.".to_string(),
-        ));
+        return Err(ApiError::BadRequest(ERR_CANNOT_DEMOTE_SELF.to_string()));
     }
 
     // Validate input
@@ -85,10 +86,7 @@ pub async fn update_role(
         "Successfully updated role for user {} to {}",
         user_id, body.role
     );
-    Ok(HttpResponse::Ok().json(ApiResponse::success(
-        "User role updated successfully",
-        user_response,
-    )))
+    Ok(HttpResponse::Ok().json(ApiResponse::success(MSG_ROLE_UPDATED, user_response)))
 }
 
 /// Update a user's active status (admin only)
@@ -123,7 +121,7 @@ pub async fn update_status(
     // Get current user from JWT claims
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request for status update");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     // Only admins can update user status
@@ -132,17 +130,13 @@ pub async fn update_status(
             "Non-admin user {} attempted to update status of user {}",
             claims.sub, user_id
         );
-        return Err(ApiError::Unauthorized(
-            "Only administrators can update user status".to_string(),
-        ));
+        return Err(ApiError::Unauthorized(ERR_ONLY_ADMINS_STATUS.to_string()));
     }
 
     // Prevent admin from deactivating themselves
     if claims.sub == user_id && !body.is_active {
         warn!("Admin {} attempted to deactivate themselves", claims.sub);
-        return Err(ApiError::BadRequest(
-            "Administrators cannot deactivate themselves".to_string(),
-        ));
+        return Err(ApiError::BadRequest(ERR_CANNOT_DEACTIVATE_SELF.to_string()));
     }
 
     info!(
@@ -161,9 +155,9 @@ pub async fn update_status(
 
     Ok(HttpResponse::Ok().json(ApiResponse::success(
         if body.is_active {
-            "User activated successfully"
+            MSG_USER_ACTIVATED
         } else {
-            "User deactivated successfully"
+            MSG_USER_DEACTIVATED
         },
         user_response,
     )))
@@ -191,7 +185,7 @@ pub async fn get_user_stats(
     // Get current user from JWT claims
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request for stats");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     // Only admins can view statistics
@@ -200,16 +194,14 @@ pub async fn get_user_stats(
             "Non-admin user {} attempted to access user statistics",
             claims.sub
         );
-        return Err(ApiError::Unauthorized(
-            "Only administrators can view user statistics".to_string(),
-        ));
+        return Err(ApiError::Unauthorized(ERR_ONLY_ADMINS_STATS.to_string()));
     }
 
     info!("Admin {} fetching user statistics", claims.sub);
 
     let stats: UserStats = user_service.get_stats().await?;
 
-    Ok(HttpResponse::Ok().json(ApiResponse::success("User statistics", stats)))
+    Ok(HttpResponse::Ok().json(ApiResponse::success(MSG_USER_STATISTICS, stats)))
 }
 
 /// Bulk update user status (admin only)
@@ -237,15 +229,13 @@ pub async fn bulk_update_status(
     // Get current user from JWT claims
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request for bulk status update");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     // Only admins can perform bulk operations
     if !claims.is_admin() {
         warn!("Non-admin user {} attempted bulk status update", claims.sub);
-        return Err(ApiError::Unauthorized(
-            "Only administrators can perform bulk operations".to_string(),
-        ));
+        return Err(ApiError::Unauthorized(ERR_ONLY_ADMINS_BULK.to_string()));
     }
 
     // Validate bulk user IDs

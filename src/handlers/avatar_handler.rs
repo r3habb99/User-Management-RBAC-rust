@@ -9,6 +9,11 @@ use std::path::Path;
 use uuid::Uuid;
 
 use crate::config::CONFIG;
+use crate::constants::{
+    ERR_AUTH_REQUIRED, ERR_FAILED_PROCESS_UPLOAD, ERR_FAILED_READ_FILE, ERR_FAILED_SAVE_FILE,
+    ERR_NO_AVATAR_FILE, ERR_NO_PERMISSION_AVATAR_DELETE, ERR_NO_PERMISSION_AVATAR_UPLOAD,
+    ERR_USER_NOT_FOUND, MSG_AVATAR_DELETED, MSG_AVATAR_UPLOADED,
+};
 use crate::errors::ApiError;
 use crate::middleware::RequestExt;
 use crate::models::{ApiResponse, UserResponse};
@@ -50,7 +55,7 @@ pub async fn upload_avatar(
     // Get current user from JWT claims
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request for avatar upload");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     // Check authorization
@@ -60,7 +65,7 @@ pub async fn upload_avatar(
             claims.sub, user_id
         );
         return Err(ApiError::Unauthorized(
-            "You don't have permission to upload avatar for this user".to_string(),
+            ERR_NO_PERMISSION_AVATAR_UPLOAD.to_string(),
         ));
     }
 
@@ -71,7 +76,7 @@ pub async fn upload_avatar(
     while let Some(item) = payload.next().await {
         let mut field = item.map_err(|e| {
             warn!("Failed to process multipart field: {}", e);
-            ApiError::BadRequest("Failed to process upload".to_string())
+            ApiError::BadRequest(ERR_FAILED_PROCESS_UPLOAD.to_string())
         })?;
 
         // Get content disposition
@@ -98,7 +103,7 @@ pub async fn upload_avatar(
         if !upload_dir.exists() {
             std::fs::create_dir_all(upload_dir).map_err(|e| {
                 warn!("Failed to create upload directory: {}", e);
-                ApiError::InternalServerError("Failed to save file".to_string())
+                ApiError::InternalServerError(ERR_FAILED_SAVE_FILE.to_string())
             })?;
         }
 
@@ -107,7 +112,7 @@ pub async fn upload_avatar(
         // Create the file
         let mut file = std::fs::File::create(&filepath).map_err(|e| {
             warn!("Failed to create file: {}", e);
-            ApiError::InternalServerError("Failed to save file".to_string())
+            ApiError::InternalServerError(ERR_FAILED_SAVE_FILE.to_string())
         })?;
 
         // Write the file content with size limit
@@ -116,7 +121,7 @@ pub async fn upload_avatar(
         while let Some(chunk) = field.next().await {
             let data = chunk.map_err(|e| {
                 warn!("Failed to read chunk: {}", e);
-                ApiError::BadRequest("Failed to read file data".to_string())
+                ApiError::BadRequest(ERR_FAILED_READ_FILE.to_string())
             })?;
 
             total_size += data.len();
@@ -128,7 +133,7 @@ pub async fn upload_avatar(
 
             file.write_all(&data).map_err(|e| {
                 warn!("Failed to write file: {}", e);
-                ApiError::InternalServerError("Failed to save file".to_string())
+                ApiError::InternalServerError(ERR_FAILED_SAVE_FILE.to_string())
             })?;
         }
 
@@ -138,9 +143,7 @@ pub async fn upload_avatar(
     }
 
     if !file_saved {
-        return Err(ApiError::BadRequest(
-            "No avatar file provided. Please upload a file with field name 'avatar'.".to_string(),
-        ));
+        return Err(ApiError::BadRequest(ERR_NO_AVATAR_FILE.to_string()));
     }
 
     // Update user's avatar URL in database
@@ -148,10 +151,7 @@ pub async fn upload_avatar(
     let user_response: UserResponse = updated_user.into();
 
     info!("Successfully uploaded avatar for user: {}", user_id);
-    Ok(HttpResponse::Ok().json(ApiResponse::success(
-        "Avatar uploaded successfully",
-        user_response,
-    )))
+    Ok(HttpResponse::Ok().json(ApiResponse::success(MSG_AVATAR_UPLOADED, user_response)))
 }
 
 /// Delete a user's avatar image
@@ -183,7 +183,7 @@ pub async fn delete_avatar(
     // Get current user from JWT claims
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request for avatar delete");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     // Check authorization
@@ -193,7 +193,7 @@ pub async fn delete_avatar(
             claims.sub, user_id
         );
         return Err(ApiError::Unauthorized(
-            "You don't have permission to delete avatar for this user".to_string(),
+            ERR_NO_PERMISSION_AVATAR_DELETE.to_string(),
         ));
     }
 
@@ -201,7 +201,7 @@ pub async fn delete_avatar(
     let user = avatar_service
         .get_user_by_id(&user_id)
         .await?
-        .ok_or_else(|| ApiError::NotFound("User not found".to_string()))?;
+        .ok_or_else(|| ApiError::NotFound(ERR_USER_NOT_FOUND.to_string()))?;
 
     // Delete the avatar file if it exists
     if let Some(ref avatar_url) = user.profile.avatar_url {
@@ -219,8 +219,5 @@ pub async fn delete_avatar(
     let user_response: UserResponse = updated_user.into();
 
     info!("Successfully deleted avatar for user: {}", user_id);
-    Ok(HttpResponse::Ok().json(ApiResponse::success(
-        "Avatar deleted successfully",
-        user_response,
-    )))
+    Ok(HttpResponse::Ok().json(ApiResponse::success(MSG_AVATAR_DELETED, user_response)))
 }

@@ -3,6 +3,7 @@
 use actix_web::{web, HttpResponse};
 use validator::Validate;
 
+use crate::constants::{MSG_LOGIN_SUCCESS, MSG_LOGOUT_SUCCESS, MSG_USER_REGISTERED};
 use crate::errors::ApiError;
 use crate::models::{ApiResponse, AuthResponse, LoginRequest, RegisterRequest, UserResponse};
 use crate::services::{AuthService, UserService};
@@ -30,10 +31,7 @@ pub async fn register(
     let user = user_service.register(body.into_inner()).await?;
     let user_response: UserResponse = user.into();
 
-    Ok(HttpResponse::Created().json(ApiResponse::success(
-        "User registered successfully",
-        user_response,
-    )))
+    Ok(HttpResponse::Created().json(ApiResponse::success(MSG_USER_REGISTERED, user_response)))
 }
 
 /// Authenticate a user and get a JWT token
@@ -59,7 +57,7 @@ pub async fn login(
 
     Ok(HttpResponse::Ok().json(AuthResponse {
         success: true,
-        message: "Login successful".to_string(),
+        message: MSG_LOGIN_SUCCESS.to_string(),
         token,
         user: user.into(),
     }))
@@ -80,5 +78,5 @@ pub async fn login(
 pub async fn logout() -> Result<HttpResponse, ApiError> {
     // For JWT-based auth, logout is typically handled client-side by removing the token
     // Server-side, you might want to implement a token blacklist for additional security
-    Ok(HttpResponse::Ok().json(ApiResponse::<()>::message("Logout successful")))
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::message(MSG_LOGOUT_SUCCESS)))
 }

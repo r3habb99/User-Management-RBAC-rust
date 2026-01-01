@@ -4,6 +4,11 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use log::{debug, info, warn};
 use validator::Validate;
 
+use crate::constants::{
+    ERR_AUTH_REQUIRED, ERR_CHANGE_OWN_PASSWORD_ONLY, ERR_NO_PERMISSION_DELETE_ACCOUNT,
+    ERR_NO_PERMISSION_UPDATE_PROFILE, ERR_USER_NOT_FOUND, MSG_PASSWORD_CHANGED, MSG_USER_DELETED,
+    MSG_USER_FOUND, MSG_USER_PROFILE_RETRIEVED, MSG_USER_UPDATED,
+};
 use crate::errors::ApiError;
 use crate::middleware::RequestExt;
 use crate::models::{
@@ -89,12 +94,12 @@ pub async fn get_user(
         .await?
         .ok_or_else(|| {
             warn!("User not found with id: {}", user_id);
-            ApiError::NotFound("User not found".to_string())
+            ApiError::NotFound(ERR_USER_NOT_FOUND.to_string())
         })?;
 
     let user_response: UserResponse = user.into();
     info!("Successfully fetched user: {}", user_id);
-    Ok(HttpResponse::Ok().json(ApiResponse::success("User found", user_response)))
+    Ok(HttpResponse::Ok().json(ApiResponse::success(MSG_USER_FOUND, user_response)))
 }
 
 /// Get the currently authenticated user's profile
@@ -117,7 +122,7 @@ pub async fn get_current_user(
 ) -> Result<HttpResponse, ApiError> {
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     debug!("Fetching current user with id: {}", claims.sub);
@@ -127,13 +132,13 @@ pub async fn get_current_user(
         .await?
         .ok_or_else(|| {
             warn!("Current user not found with id: {}", claims.sub);
-            ApiError::NotFound("User not found".to_string())
+            ApiError::NotFound(ERR_USER_NOT_FOUND.to_string())
         })?;
 
     let user_response: UserResponse = user.into();
     info!("Successfully fetched current user: {}", claims.sub);
     Ok(HttpResponse::Ok().json(ApiResponse::success(
-        "User profile retrieved",
+        MSG_USER_PROFILE_RETRIEVED,
         user_response,
     )))
 }
@@ -170,7 +175,7 @@ pub async fn update_user(
     // Get current user from JWT claims
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request for update");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     // Check authorization: user can update their own profile, or admin can update any user
@@ -180,7 +185,7 @@ pub async fn update_user(
             claims.sub, claims.role, user_id
         );
         return Err(ApiError::Unauthorized(
-            "You don't have permission to update this user's profile".to_string(),
+            ERR_NO_PERMISSION_UPDATE_PROFILE.to_string(),
         ));
     }
 
@@ -202,10 +207,7 @@ pub async fn update_user(
     let user_response: UserResponse = updated_user.into();
 
     info!("Successfully updated user: {}", user_id);
-    Ok(HttpResponse::Ok().json(ApiResponse::success(
-        "User profile updated successfully",
-        user_response,
-    )))
+    Ok(HttpResponse::Ok().json(ApiResponse::success(MSG_USER_UPDATED, user_response)))
 }
 
 /// Delete a user account
@@ -237,7 +239,7 @@ pub async fn delete_user(
     // Get current user from JWT claims
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request for delete");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     // Check authorization: user can delete their own account, or admin can delete any user
@@ -247,7 +249,7 @@ pub async fn delete_user(
             claims.sub, claims.role, user_id
         );
         return Err(ApiError::Unauthorized(
-            "You don't have permission to delete this user's account".to_string(),
+            ERR_NO_PERMISSION_DELETE_ACCOUNT.to_string(),
         ));
     }
 
@@ -260,9 +262,7 @@ pub async fn delete_user(
     user_service.delete_user(&user_id).await?;
 
     info!("Successfully deleted user: {}", user_id);
-    Ok(HttpResponse::Ok().json(ApiResponse::<()>::message(
-        "User account deleted successfully",
-    )))
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::message(MSG_USER_DELETED)))
 }
 
 /// Change a user's password
@@ -296,7 +296,7 @@ pub async fn change_password(
     // Get current user from JWT claims
     let claims = req.get_claims().ok_or_else(|| {
         warn!("Failed to get claims from request for password change");
-        ApiError::Unauthorized("Authentication required".to_string())
+        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
     })?;
 
     // Password changes always require knowing the current password,
@@ -307,7 +307,7 @@ pub async fn change_password(
             claims.sub, claims.role, user_id
         );
         return Err(ApiError::Unauthorized(
-            "You can only change your own password. For other users, use the password reset feature.".to_string(),
+            ERR_CHANGE_OWN_PASSWORD_ONLY.to_string(),
         ));
     }
 
@@ -323,7 +323,7 @@ pub async fn change_password(
         .await?;
 
     info!("Successfully changed password for user: {}", user_id);
-    Ok(HttpResponse::Ok().json(ApiResponse::<()>::message("Password changed successfully")))
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::message(MSG_PASSWORD_CHANGED)))
 }
 
 /// Query parameters for listing users with pagination, filters, and search
