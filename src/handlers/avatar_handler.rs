@@ -10,12 +10,12 @@ use uuid::Uuid;
 
 use crate::config::CONFIG;
 use crate::constants::{
-    ERR_AUTH_REQUIRED, ERR_FAILED_PROCESS_UPLOAD, ERR_FAILED_READ_FILE, ERR_FAILED_SAVE_FILE,
-    ERR_NO_AVATAR_FILE, ERR_NO_PERMISSION_AVATAR_DELETE, ERR_NO_PERMISSION_AVATAR_UPLOAD,
-    ERR_USER_NOT_FOUND, MSG_AVATAR_DELETED, MSG_AVATAR_UPLOADED,
+    ERR_FAILED_PROCESS_UPLOAD, ERR_FAILED_READ_FILE, ERR_FAILED_SAVE_FILE, ERR_NO_AVATAR_FILE,
+    ERR_NO_PERMISSION_AVATAR_DELETE, ERR_NO_PERMISSION_AVATAR_UPLOAD, ERR_USER_NOT_FOUND,
+    MSG_AVATAR_DELETED, MSG_AVATAR_UPLOADED,
 };
 use crate::errors::ApiError;
-use crate::middleware::RequestExt;
+use crate::middleware::{require_access, require_auth};
 use crate::models::{ApiResponse, UserResponse};
 use crate::services::AvatarService;
 use crate::validators::{
@@ -51,23 +51,8 @@ pub async fn upload_avatar(
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
     let user_id = path.into_inner();
-
-    // Get current user from JWT claims
-    let claims = req.get_claims().ok_or_else(|| {
-        warn!("Failed to get claims from request for avatar upload");
-        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
-    })?;
-
-    // Check authorization
-    if !claims.can_access(&user_id) {
-        warn!(
-            "User {} attempted to upload avatar for user {}",
-            claims.sub, user_id
-        );
-        return Err(ApiError::Unauthorized(
-            ERR_NO_PERMISSION_AVATAR_UPLOAD.to_string(),
-        ));
-    }
+    let claims = require_auth(&req)?;
+    require_access(&claims, &user_id, ERR_NO_PERMISSION_AVATAR_UPLOAD)?;
 
     // Process the multipart upload
     let mut file_saved = false;
@@ -179,23 +164,8 @@ pub async fn delete_avatar(
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
     let user_id = path.into_inner();
-
-    // Get current user from JWT claims
-    let claims = req.get_claims().ok_or_else(|| {
-        warn!("Failed to get claims from request for avatar delete");
-        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
-    })?;
-
-    // Check authorization
-    if !claims.can_access(&user_id) {
-        warn!(
-            "User {} attempted to delete avatar for user {}",
-            claims.sub, user_id
-        );
-        return Err(ApiError::Unauthorized(
-            ERR_NO_PERMISSION_AVATAR_DELETE.to_string(),
-        ));
-    }
+    let _claims = require_auth(&req)?;
+    require_access(&_claims, &user_id, ERR_NO_PERMISSION_AVATAR_DELETE)?;
 
     // Get current user to find avatar path
     let user = avatar_service

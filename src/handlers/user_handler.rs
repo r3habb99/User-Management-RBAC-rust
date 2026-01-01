@@ -5,12 +5,12 @@ use log::{debug, info, warn};
 use validator::Validate;
 
 use crate::constants::{
-    ERR_AUTH_REQUIRED, ERR_CHANGE_OWN_PASSWORD_ONLY, ERR_NO_PERMISSION_DELETE_ACCOUNT,
+    ERR_CHANGE_OWN_PASSWORD_ONLY, ERR_NO_PERMISSION_DELETE_ACCOUNT,
     ERR_NO_PERMISSION_UPDATE_PROFILE, ERR_USER_NOT_FOUND, MSG_PASSWORD_CHANGED, MSG_USER_DELETED,
     MSG_USER_FOUND, MSG_USER_PROFILE_RETRIEVED, MSG_USER_UPDATED,
 };
 use crate::errors::ApiError;
-use crate::middleware::RequestExt;
+use crate::middleware::{require_access, require_auth};
 use crate::models::{
     ApiResponse, ChangePasswordRequest, PaginatedResponse, UpdateUserRequest, UserResponse,
 };
@@ -120,10 +120,7 @@ pub async fn get_current_user(
     user_service: web::Data<UserService>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
-    let claims = req.get_claims().ok_or_else(|| {
-        warn!("Failed to get claims from request");
-        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
-    })?;
+    let claims = require_auth(&req)?;
 
     debug!("Fetching current user with id: {}", claims.sub);
 
@@ -171,23 +168,8 @@ pub async fn update_user(
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
     let user_id = path.into_inner();
-
-    // Get current user from JWT claims
-    let claims = req.get_claims().ok_or_else(|| {
-        warn!("Failed to get claims from request for update");
-        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
-    })?;
-
-    // Check authorization: user can update their own profile, or admin can update any user
-    if !claims.can_access(&user_id) {
-        warn!(
-            "User {} (role: {}) attempted to update profile of user {}",
-            claims.sub, claims.role, user_id
-        );
-        return Err(ApiError::Unauthorized(
-            ERR_NO_PERMISSION_UPDATE_PROFILE.to_string(),
-        ));
-    }
+    let claims = require_auth(&req)?;
+    require_access(&claims, &user_id, ERR_NO_PERMISSION_UPDATE_PROFILE)?;
 
     // Log if admin is updating another user
     if claims.is_admin() && claims.sub != user_id {
@@ -195,10 +177,7 @@ pub async fn update_user(
     }
 
     // Validate input
-    body.validate().map_err(|e| {
-        warn!("Validation failed for update user");
-        validation_errors_to_api_error(e)
-    })?;
+    body.validate().map_err(validation_errors_to_api_error)?;
 
     info!("Updating user profile for user_id: {}", user_id);
     let updated_user = user_service
@@ -235,23 +214,8 @@ pub async fn delete_user(
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
     let user_id = path.into_inner();
-
-    // Get current user from JWT claims
-    let claims = req.get_claims().ok_or_else(|| {
-        warn!("Failed to get claims from request for delete");
-        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
-    })?;
-
-    // Check authorization: user can delete their own account, or admin can delete any user
-    if !claims.can_access(&user_id) {
-        warn!(
-            "User {} (role: {}) attempted to delete account of user {}",
-            claims.sub, claims.role, user_id
-        );
-        return Err(ApiError::Unauthorized(
-            ERR_NO_PERMISSION_DELETE_ACCOUNT.to_string(),
-        ));
-    }
+    let claims = require_auth(&req)?;
+    require_access(&claims, &user_id, ERR_NO_PERMISSION_DELETE_ACCOUNT)?;
 
     // Log if admin is deleting another user
     if claims.is_admin() && claims.sub != user_id {
@@ -292,12 +256,7 @@ pub async fn change_password(
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
     let user_id = path.into_inner();
-
-    // Get current user from JWT claims
-    let claims = req.get_claims().ok_or_else(|| {
-        warn!("Failed to get claims from request for password change");
-        ApiError::Unauthorized(ERR_AUTH_REQUIRED.to_string())
-    })?;
+    let claims = require_auth(&req)?;
 
     // Password changes always require knowing the current password,
     // so users (including admins) can only change their own password
@@ -312,10 +271,7 @@ pub async fn change_password(
     }
 
     // Validate input
-    body.validate().map_err(|e| {
-        warn!("Validation failed for change password");
-        validation_errors_to_api_error(e)
-    })?;
+    body.validate().map_err(validation_errors_to_api_error)?;
 
     info!("Changing password for user_id: {}", user_id);
     user_service
