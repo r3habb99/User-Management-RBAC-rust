@@ -598,10 +598,10 @@ impl UserService {
             .await?
             .is_some()
         {
-            warn!(
-                "User with email {} already exists but is not an admin",
-                mask_email(&CONFIG.admin_email)
-            );
+            // warn!(
+            //     "User with email {} already exists but is not an admin",
+            //     mask_email(&CONFIG.admin_email)
+            // );
             return Ok(());
         }
 
@@ -611,10 +611,10 @@ impl UserService {
             .await?
             .is_some()
         {
-            warn!(
-                "User with username {} already exists but is not an admin",
-                mask_username(&CONFIG.admin_username)
-            );
+            // warn!(
+            //     "User with username {} already exists but is not an admin",
+            //     mask_username(&CONFIG.admin_username)
+            // );
             return Ok(());
         }
 

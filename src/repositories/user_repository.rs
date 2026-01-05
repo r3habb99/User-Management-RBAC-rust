@@ -4,7 +4,7 @@
 //! providing a clean interface for the service layer.
 
 use futures::TryStreamExt;
-use log::{debug, info};
+use log::debug;
 use mongodb::bson::{doc, oid::ObjectId, Document};
 use mongodb::{Collection, Database, IndexModel};
 
@@ -34,7 +34,7 @@ impl UserRepository {
     /// - Unique index on `username`
     /// - Compound index on `role` and `is_active`
     pub async fn create_indexes(&self) -> Result<(), ApiError> {
-        info!("Creating database indexes for users collection...");
+        // info!("Creating database indexes for users collection...");
 
         let indexes = vec![
             // Unique index on email
@@ -62,7 +62,7 @@ impl UserRepository {
         ];
 
         self.collection.create_indexes(indexes).await?;
-        info!("Database indexes created successfully");
+        // info!("Database indexes created successfully");
         Ok(())
     }
 
