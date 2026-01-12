@@ -59,7 +59,8 @@ impl TokenBlacklist {
             // Hash the token for storage (don't store the actual token)
             let token_hash = Self::hash_token(token);
 
-            self.tokens.insert(token_hash, BlacklistEntry { expires_at });
+            self.tokens
+                .insert(token_hash, BlacklistEntry { expires_at });
             debug!("Token blacklisted, will expire in {:?}", ttl);
         }
 
@@ -150,4 +151,3 @@ impl Default for TokenBlacklist {
         Self::new()
     }
 }
-

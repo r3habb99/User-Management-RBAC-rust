@@ -27,4 +27,3 @@ pub const MSG_AVATAR_DELETED: &str = "Avatar deleted successfully";
 
 // Stats messages
 pub const MSG_USER_STATISTICS: &str = "User statistics";
-

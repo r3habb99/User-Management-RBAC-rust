@@ -146,4 +146,3 @@ pub struct UserStats {
     /// Number of regular users
     pub regular_users: u64,
 }
-

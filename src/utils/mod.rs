@@ -3,4 +3,3 @@
 mod log_sanitizer;
 
 pub use log_sanitizer::{mask_email, mask_username};
-

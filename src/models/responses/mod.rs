@@ -7,4 +7,3 @@ pub mod user;
 pub use api::*;
 pub use pagination::*;
 pub use user::*;
-

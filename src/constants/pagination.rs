@@ -8,4 +8,3 @@ pub const MAX_PAGE_SIZE: u64 = 100;
 
 /// Default starting page number.
 pub const DEFAULT_PAGE_NUMBER: u64 = 1;
-

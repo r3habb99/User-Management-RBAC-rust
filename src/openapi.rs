@@ -83,13 +83,10 @@ impl Modify for SecurityAddon {
                     HttpBuilder::new()
                         .scheme(HttpAuthScheme::Bearer)
                         .bearer_format("JWT")
-                        .description(Some(
-                            "JWT token obtained from the /api/auth/login endpoint",
-                        ))
+                        .description(Some("JWT token obtained from the /api/auth/login endpoint"))
                         .build(),
                 ),
             );
         }
     }
 }
-

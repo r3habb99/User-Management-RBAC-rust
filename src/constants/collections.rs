@@ -2,4 +2,3 @@
 
 /// Users collection name.
 pub const COLLECTION_USERS: &str = "users";
-

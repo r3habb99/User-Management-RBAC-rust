@@ -71,4 +71,3 @@ mod tests {
         assert_eq!(mask_username("a"), "a***");
     }
 }
-
